@@ -1102,6 +1102,10 @@ function newModalHTML(){
 // shared Firestore doc (`settings/config`) — every signed-in user sees the
 // same list, and it updates live for everyone once saved.
 function settingsPageHTML(){
+  // Reachable by restoring '#/settings' from the URL on load/hashchange,
+  // which (unlike openSettings()) doesn't build this form first -- self-heal
+  // rather than crash if it's missing.
+  if(!S.settingsForm) S.settingsForm = { apis:[...APIS], team: TEAM_MEMBERS.map(m=>({...m})) };
   const f = S.settingsForm;
   return `
     <header style="display:flex;flex-wrap:wrap;align-items:flex-end;gap:var(--space-4);padding:var(--space-6) var(--space-6) var(--space-4);border-bottom:2px solid var(--color-divider)">
