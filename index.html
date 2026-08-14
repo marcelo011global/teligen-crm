@@ -709,7 +709,8 @@ function recordPageHTML(){
             </span>
           </div>
         </div>
-        <div style="display:flex;gap:var(--space-2)">
+        <div style="display:flex;gap:var(--space-2);align-items:center">
+          <button class="btn btn-ghost" onclick="deleteRecord()" style="color:var(--color-neutral-700)">Delete</button>
           <button class="btn btn-secondary" onclick="focusComposer()">Log activity</button>
           <button class="btn btn-primary" onclick="openEdit()">Edit record</button>
         </div>
@@ -1173,6 +1174,24 @@ window.saveNew = async function(){
   }
 };
 
+window.deleteRecord = async function(){
+  const {type,id} = S.selected;
+  const rec = recordOf(type,id);
+  if(!rec) return;
+  if(!confirm(`Delete "${rec.name}"? This removes the record and its relationship log. This cannot be undone.`)) return;
+  try {
+    await dbDelete(type, id);
+    // Its logEntries are orphaned on purpose rather than bulk-deleted here —
+    // Firestore has no client-side "delete where" and this is a rare action;
+    // orphaned entries never surface anywhere since every view looks them up
+    // by an existing record's id.
+    S.selected = null;
+    window.nav(type);
+  } catch(e) {
+    console.error('deleteRecord failed:', e);
+    alert('Could not delete. Error: ' + (e && e.message || e));
+  }
+};
 window.reassignAM = async function(newOwner){
   const {type,id} = S.selected;
   const rec = recordOf(type,id);
