@@ -106,6 +106,11 @@ async function dbDelete(col, id){
   if (DEMO_MODE) { demoStore[col] = demoStore[col].filter(d=>d.id!==id); demoNotify(col); return; }
   await deleteDoc(doc(db,col,id));
 }
+// Collection name -> error, whenever a live listener fails (almost always a
+// Firestore security-rules rejection). Surfaced as a banner in shellHTML()
+// instead of silently leaving that data empty, which used to look exactly
+// like "my records got deleted" when really they just failed to load.
+let dataErrors = {};
 function dbWatch(col, cb){
   if (DEMO_MODE) {
     demoWatchers[col] = demoWatchers[col]||[];
@@ -113,7 +118,14 @@ function dbWatch(col, cb){
     cb(demoStore[col].map(d=>({...d})));
     return ()=>{ demoWatchers[col] = (demoWatchers[col]||[]).filter(f=>f!==cb); };
   }
-  return onSnapshot(collection(db,col), snap=>cb(snap.docs.map(d=>({id:d.id,...d.data()}))));
+  return onSnapshot(collection(db,col), snap=>{
+    delete dataErrors[col];
+    cb(snap.docs.map(d=>({id:d.id,...d.data()})));
+  }, err=>{
+    console.error(`Listening to '${col}' failed:`, err);
+    dataErrors[col] = err.message || String(err);
+    render();
+  });
 }
 // Settings is a single shared doc (tracked APIs, team roster), not a
 // collection — same demo/real split as above, plus a setDoc-style upsert
@@ -125,7 +137,14 @@ function watchSettings(cb){
     cb(demoStore.settings ? {...demoStore.settings} : null);
     return ()=>{ demoWatchers['settings'] = (demoWatchers['settings']||[]).filter(f=>f!==cb); };
   }
-  return onSnapshot(doc(db,'settings','config'), snap=>cb(snap.exists()?snap.data():null));
+  return onSnapshot(doc(db,'settings','config'), snap=>{
+    delete dataErrors['settings'];
+    cb(snap.exists()?snap.data():null);
+  }, err=>{
+    console.error(`Listening to 'settings' failed:`, err);
+    dataErrors['settings'] = err.message || String(err);
+    render();
+  });
 }
 async function saveSettings(data){
   if (DEMO_MODE) {
@@ -323,9 +342,13 @@ function render(){
 }
 function shellHTML(){
   const banner = DEMO_MODE ? `<div class="demo-banner">Demo mode — data is stored only in this browser. Configure a real Firebase project in index.html to go live (see README.md).</div>` : '';
+  const errCols = Object.keys(dataErrors);
+  const errBanner = errCols.length ? `<div class="demo-banner" style="background:var(--color-accent-100);color:var(--color-accent-800)">
+    Couldn't load ${errCols.join(', ')} — this is a read failure, not deleted data. Usually means the Firestore security rule from README.md isn't set up (or your sign-in session needs a refresh — try reloading). Detail: ${esc(dataErrors[errCols[0]])}
+  </div>` : '';
   return `
-  ${banner}
-  <div style="display:grid;grid-template-columns:232px 1fr;min-height:${DEMO_MODE?'calc(100vh - 29px)':'100vh'};background:var(--color-bg);color:var(--color-text);font-family:var(--font-body)">
+  ${banner}${errBanner}
+  <div style="display:grid;grid-template-columns:232px 1fr;min-height:100vh;background:var(--color-bg);color:var(--color-text);font-family:var(--font-body)">
     ${sidebarHTML()}
     <main style="min-width:0;display:flex;flex-direction:column">
       ${S.selected ? recordPageHTML() : (S.view==='settings' ? settingsPageHTML() : listPageHTML())}
