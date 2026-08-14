@@ -50,7 +50,7 @@
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut as fbSignOut } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-import { getFirestore, collection, addDoc, updateDoc, deleteDoc, doc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+import { getFirestore, collection, addDoc, updateDoc, deleteDoc, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
 // ── Firebase config ─────────────────────────────────────────────────────────
 // TODO: replace with the Teligen CRM's own Firebase project (see README.md).
@@ -115,16 +115,43 @@ function dbWatch(col, cb){
   }
   return onSnapshot(collection(db,col), snap=>cb(snap.docs.map(d=>({id:d.id,...d.data()}))));
 }
+// Settings is a single shared doc (tracked APIs, team roster), not a
+// collection — same demo/real split as above, plus a setDoc-style upsert
+// since there's no per-record id to key off.
+function watchSettings(cb){
+  if (DEMO_MODE) {
+    demoWatchers['settings'] = demoWatchers['settings']||[];
+    demoWatchers['settings'].push(cb);
+    cb(demoStore.settings ? {...demoStore.settings} : null);
+    return ()=>{ demoWatchers['settings'] = (demoWatchers['settings']||[]).filter(f=>f!==cb); };
+  }
+  return onSnapshot(doc(db,'settings','config'), snap=>cb(snap.exists()?snap.data():null));
+}
+async function saveSettings(data){
+  if (DEMO_MODE) {
+    demoStore.settings = data;
+    localStorage.setItem(LS_KEY, JSON.stringify(demoStore));
+    (demoWatchers['settings']||[]).forEach(cb=>cb({...data}));
+    return;
+  }
+  await setDoc(doc(db,'settings','config'), data, {merge:true});
+}
 
 // ── Constants ────────────────────────────────────────────────────────────
-// TODO: add each new team member's name here as they start using the CRM,
-// and map their sign-in email to it below so records they create get
-// attributed correctly (their Firebase display name may not be set).
-const TEAM = ["Marcelo Licht","Unassigned"];
-const TEAM_BY_EMAIL = {
-  'marcelo@011global.com': 'Marcelo Licht'
-};
-const APIS = ["SIM Swap","Silent Auth","KYC Match","Age Verification"];
+// Tracked APIs and the team roster are editable from the Settings page
+// (bottom of the sidebar) and persisted to Firestore — these are just the
+// defaults used the first time the app runs, before Settings has saved
+// anything. `TEAM_MEMBERS`/`APIS` are reassigned wholesale (not mutated in
+// place) whenever settings load or save, everything else just reads them.
+let TEAM_MEMBERS = [ {name:'Marcelo Licht', email:'marcelo@011global.com'} ];
+let TEAM = []; // derived: TEAM_MEMBERS' names + 'Unassigned' — call refreshTeam() after changing TEAM_MEMBERS
+function refreshTeam(){ TEAM = [...TEAM_MEMBERS.map(m=>m.name), 'Unassigned']; }
+function nameForEmail(email){
+  const m = TEAM_MEMBERS.find(x=>(x.email||'').toLowerCase()===String(email||'').toLowerCase());
+  return m ? m.name : null;
+}
+refreshTeam();
+let APIS = ["SIM Swap","Silent Auth","KYC Match","Age Verification"];
 const STAGES = ["New","Qualified","Proposal","Pilot","Contracting"];
 const CUSTOMER_STATUSES = ["Live","Pilot","Onboarding","Prospect"];
 const PROVIDER_KINDS = ["Mobile Operator","Wholesale"];
@@ -156,8 +183,7 @@ function curAuthorName(){
   if(DEMO_MODE) return 'Demo User';
   const u = auth && auth.currentUser;
   if(!u) return 'Unknown';
-  const email = (u.email||'').toLowerCase();
-  return TEAM_BY_EMAIL[email] || u.displayName || u.email || 'Unknown';
+  return nameForEmail(u.email) || u.displayName || u.email || 'Unknown';
 }
 function fmtMoney(n){ n=Number(n)||0; return '$'+n.toLocaleString('en-US'); }
 function fmtUsers(n){ n=Number(n)||0; if(!n) return '—'; if(n>=1e6) return (n/1e6).toFixed(1)+'M'; if(n>=1e3) return (n/1e3).toFixed(0)+'K'; return String(n); }
@@ -188,9 +214,13 @@ function apiCell(flag){
   if(flag===2) return {label:'Planned', cls:'tag tag-outline'};
   return {label:'—', cls:''};
 }
+// A market's apiFlags array is only as long as APIS was when it was saved —
+// if an API gets added/removed later in Settings, old rows fall out of sync.
+// Always read flags through this so a missing index just reads as "not covered".
+function normFlags(row){ return APIS.map((_,i)=>(row && row.apiFlags && row.apiFlags[i]) || 0); }
 function computeApis(coverage){
   return APIS.map((_,i)=>{
-    const rows=(coverage||[]).map(r=>(r.apiFlags||[])[i]||0);
+    const rows=(coverage||[]).map(r=>normFlags(r)[i]);
     if(rows.some(f=>f===1)) return 1;
     if(rows.some(f=>f===2)) return 2;
     return 0;
@@ -264,7 +294,15 @@ function navCount(view){
 // ── Root render ──────────────────────────────────────────────────────────
 function render(){
   const el = document.getElementById('app');
-  el.innerHTML = shellHTML();
+  try {
+    el.innerHTML = shellHTML();
+  } catch(e) {
+    // A rendering bug used to leave whatever was on screen frozen in place
+    // (e.g. a modal that silently "won't close") with zero indication why.
+    // Surface it instead — screenshot this and it's a fixable bug report.
+    console.error('Render error:', e);
+    el.innerHTML = `<div style="padding:40px;font-family:monospace;white-space:pre-wrap;color:#ae1800;background:#fff2ef">Something broke while rendering the page.\nScreenshot this and send it over:\n\n${esc(e && e.stack || e)}</div>`;
+  }
 }
 function shellHTML(){
   const banner = DEMO_MODE ? `<div class="demo-banner">Demo mode — data is stored only in this browser. Configure a real Firebase project in index.html to go live (see README.md).</div>` : '';
@@ -273,7 +311,7 @@ function shellHTML(){
   <div style="display:grid;grid-template-columns:232px 1fr;min-height:${DEMO_MODE?'calc(100vh - 29px)':'100vh'};background:var(--color-bg);color:var(--color-text);font-family:var(--font-body)">
     ${sidebarHTML()}
     <main style="min-width:0;display:flex;flex-direction:column">
-      ${S.selected ? recordPageHTML() : listPageHTML()}
+      ${S.selected ? recordPageHTML() : (S.view==='settings' ? settingsPageHTML() : listPageHTML())}
     </main>
   </div>
   ${S.showEdit ? editModalHTML() : ''}
@@ -296,6 +334,8 @@ function sidebarHTML(){
     </nav>
     <div style="margin-top:auto;padding:var(--space-4);border-top:2px solid var(--color-divider);font-size:11px;color:var(--color-neutral-700);line-height:1.6">
       ${esc(curAuthorName())}<br>
+      <a href="#" onclick="openSettings();return false" style="${S.view==='settings' && !S.selected ? 'color:var(--color-accent);font-weight:600' : ''}">Settings</a>
+      &nbsp;·&nbsp;
       <a href="#" onclick="doSignOut();return false">Sign out</a>
     </div>
   </aside>`;
@@ -536,7 +576,7 @@ function tableRows_coverage(){
   for(const p of DATA.providers){
     if(!ownerOk(p.owner)) continue;
     for(const r of (p.coverage||[])){
-      rows.push({country:r.country, operator:r.operator, apiFlags:r.apiFlags||[0,0,0,0], provider:p});
+      rows.push({country:r.country, operator:r.operator, apiFlags:normFlags(r), provider:p});
     }
   }
   rows.sort((a,b)=> (a.country||'').localeCompare(b.country||'') || (a.operator||'').localeCompare(b.operator||''));
@@ -731,7 +771,7 @@ function providerCoverageHTML(rec){
     <div style="overflow-x:auto;min-width:0;margin-top:var(--space-3)">
       <table class="table"><thead><tr><th>Country</th><th>Operator / network</th>${APIS.map(a=>`<th>${a}</th>`).join('')}</tr></thead><tbody>
         ${rows.map(r=>`<tr><td style="font-weight:600">${esc(r.country)}</td><td style="color:var(--color-neutral-700)">${esc(r.operator)}</td>
-          ${(r.apiFlags||[0,0,0,0]).map(f=>{const c=apiCell(f);return `<td><span class="${c.cls}">${c.label}</span></td>`}).join('')}</tr>`).join('')}
+          ${normFlags(r).map(f=>{const c=apiCell(f);return `<td><span class="${c.cls}">${c.label}</span></td>`}).join('')}</tr>`).join('')}
       </tbody></table>
     </div>
     ${!rows.length?`<div style="padding:var(--space-4) 0;font-size:13px;color:var(--color-neutral-700)">No markets mapped — use Manage to add the first country and operator.</div>`:''}
@@ -923,7 +963,7 @@ function coverageEditorHTML(){
         <div style="grid-column:1 / -1">
           <div style="font-size:11px;letter-spacing:0.1em;text-transform:uppercase;color:var(--color-neutral-700);margin-bottom:6px">APIs covered in this market</div>
           <div style="display:flex;flex-wrap:wrap;gap:4px">
-            ${APIS.map((a,ai)=>{const c=apiCell(r.apiFlags[ai]||0);return `<button onclick="cycleCovApi(${i},${ai})" class="chip ${(r.apiFlags[ai]||0)?'on':''}" style="padding:6px 10px">${a}: ${c.label}</button>`}).join('')}
+            ${normFlags(r).map((f,ai)=>{const c=apiCell(f);return `<button onclick="cycleCovApi(${i},${ai})" class="chip ${f?'on':''}" style="padding:6px 10px">${APIS[ai]}: ${c.label}</button>`}).join('')}
           </div>
         </div>
       </div>`).join('')}
@@ -1009,7 +1049,51 @@ function newModalHTML(){
   </div>`;
 }
 
-// ── Actions (window.*) ────────────────────────────────────────────────
+// ── Settings ─────────────────────────────────────────────────────────────
+// Tracked APIs and the team roster used to be hardcoded constants requiring
+// a code change + redeploy. They're editable here instead, stored in one
+// shared Firestore doc (`settings/config`) — every signed-in user sees the
+// same list, and it updates live for everyone once saved.
+function settingsPageHTML(){
+  const f = S.settingsForm;
+  return `
+    <header style="display:flex;flex-wrap:wrap;align-items:flex-end;gap:var(--space-4);padding:var(--space-6) var(--space-6) var(--space-4);border-bottom:2px solid var(--color-divider)">
+      <div style="flex:1 1 240px;min-width:200px">
+        <div style="font-size:11px;letter-spacing:0.1em;text-transform:uppercase;color:var(--color-neutral-700)">Configuration</div>
+        <h1 style="margin:4px 0 0;font-size:30px;line-height:1.05;letter-spacing:-0.02em">Settings</h1>
+      </div>
+      <button class="btn btn-secondary" onclick="closeSettings()">Back</button>
+      <button class="btn btn-primary" onclick="saveSettingsForm()">Save changes</button>
+    </header>
+    <div style="flex:1;overflow:auto;padding:var(--space-6)">
+      <section style="max-width:640px;margin-bottom:var(--space-8)">
+        <div style="display:flex;align-items:center;gap:var(--space-3);margin-bottom:var(--space-3)">
+          <h2 style="margin:0;font-size:22px;letter-spacing:-0.01em">Tracked APIs</h2>
+          <button class="btn btn-secondary" style="margin-left:auto" onclick="settingsAddApi()">+ Add API</button>
+        </div>
+        <p style="font-size:13px;color:var(--color-neutral-700);margin:0 0 var(--space-3)">Shown as columns on Providers, API coverage, and as the Interest options on Leads. Existing coverage on providers is unaffected by reordering or adding — a market simply reads as "not covered" for any API it hasn't been set for.</p>
+        ${f.apis.map((a,i)=>`
+          <div style="display:flex;gap:var(--space-2);align-items:center;padding:var(--space-2) 0;border-top:1px solid var(--color-divider)">
+            <input class="input" value="${esc(a)}" onchange="settingsApiChange(${i},this.value)">
+            <button class="btn btn-ghost" onclick="settingsRemoveApi(${i})">Remove</button>
+          </div>`).join('')}
+      </section>
+      <section style="max-width:640px">
+        <div style="display:flex;align-items:center;gap:var(--space-3);margin-bottom:var(--space-3)">
+          <h2 style="margin:0;font-size:22px;letter-spacing:-0.01em">Account managers</h2>
+          <button class="btn btn-secondary" style="margin-left:auto" onclick="settingsAddMember()">+ Add person</button>
+        </div>
+        <p style="font-size:13px;color:var(--color-neutral-700);margin:0 0 var(--space-3)">Whoever signs in with one of these emails is attributed by name on everything they log or create. Add new teammates here before they sign in — otherwise their raw email shows up until you do. "Unassigned" is always available as a fallback and doesn't need to be listed.</p>
+        ${f.team.map((m,i)=>`
+          <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:var(--space-2);align-items:center;padding:var(--space-2) 0;border-top:1px solid var(--color-divider)">
+            <input class="input" placeholder="Name" value="${esc(m.name)}" onchange="settingsMemberChange(${i},'name',this.value)">
+            <input class="input" placeholder="email@011global.com" value="${esc(m.email)}" onchange="settingsMemberChange(${i},'email',this.value)">
+            <button class="btn btn-ghost" onclick="settingsRemoveMember(${i})">Remove</button>
+          </div>`).join('')}
+      </section>
+    </div>
+  `;
+}
 window.nav = function(view){ S.view=view; S.filter='all'; S.q=''; S.selected=null; location.hash = '#/'+view; render(); };
 window.setSearch = function(v){ S.q=v; render(); };
 window.setOwnerFilter = function(v){ S.ownerFilter=v; render(); };
@@ -1034,10 +1118,15 @@ window.openEdit = function(){
 };
 window.closeEdit = function(){ S.showEdit=false; render(); };
 window.editFieldChange = function(k,v,isList){ S.editForm[k] = isList ? v.split(',').map(s=>s.trim()).filter(Boolean) : v; };
-window.addCovRow = function(){ S.editCov.push({country:'',operator:'',apiFlags:[0,0,0,0]}); render(); };
+window.addCovRow = function(){ S.editCov.push({country:'',operator:'',apiFlags:APIS.map(()=>0)}); render(); };
 window.removeCovRow = function(i){ S.editCov.splice(i,1); render(); };
 window.covFieldChange = function(i,k,v){ S.editCov[i][k]=v; };
-window.cycleCovApi = function(i,ai){ const f=S.editCov[i].apiFlags[ai]||0; S.editCov[i].apiFlags[ai]=(f+1)%3; render(); };
+window.cycleCovApi = function(i,ai){
+  const flags = normFlags(S.editCov[i]);
+  flags[ai] = (flags[ai]+1)%3;
+  S.editCov[i].apiFlags = flags;
+  render();
+};
 window.addIntroRow = function(){ S.editIntros.push({name:'',side:'Customer',country:'',industry:'',stage:'Offered',note:''}); render(); };
 window.removeIntroRow = function(i){ S.editIntros.splice(i,1); render(); };
 window.introFieldChange = function(i,k,v){ S.editIntros[i][k]=v; };
@@ -1047,15 +1136,20 @@ window.contactFieldChange = function(i,k,v){ S.editContacts[i][k]=v; };
 
 window.saveEdit = async function(){
   const {type,id} = S.selected;
-  const data = {...S.editForm};
-  delete data.id;
-  data.contacts = S.editContacts.filter(c=>c.name && c.name.trim());
-  if(type==='providers'){ data.coverage = S.editCov.filter(r=>r.country&&r.country.trim()); data.apis = computeApis(data.coverage); }
-  if(type==='partners'){ data.intros = S.editIntros.filter(r=>r.name&&r.name.trim()); }
-  if(type==='leads' || type==='customers'){ data.value = Number(data.value)||0; data.arr = Number(data.arr)||0; }
-  if(type==='providers'){ data.users = Number(data.users)||0; }
-  await dbUpdate(type, id, data);
-  S.showEdit = false; render();
+  try {
+    const data = {...S.editForm};
+    delete data.id;
+    data.contacts = S.editContacts.filter(c=>c.name && c.name.trim());
+    if(type==='providers'){ data.coverage = S.editCov.filter(r=>r.country&&r.country.trim()); data.apis = computeApis(data.coverage); }
+    if(type==='partners'){ data.intros = S.editIntros.filter(r=>r.name&&r.name.trim()); }
+    if(type==='leads' || type==='customers'){ data.value = Number(data.value)||0; data.arr = Number(data.arr)||0; }
+    if(type==='providers'){ data.users = Number(data.users)||0; }
+    await dbUpdate(type, id, data);
+    S.showEdit = false; render();
+  } catch(e) {
+    console.error('saveEdit failed:', e);
+    alert('Could not save — nothing was lost, your edits are still in this form. Error: ' + (e && e.message || e));
+  }
 };
 
 window.openNew = function(type){ S.newForm = {__type:type}; S.showNew = true; render(); };
@@ -1063,15 +1157,20 @@ window.closeNew = function(){ S.showNew=false; render(); };
 window.newFieldChange = function(k,v){ S.newForm[k]=v; };
 window.saveNew = async function(){
   const type = S.newForm.__type;
-  const base = {owner:curAuthorName(), contacts:[], createdAt:new Date().toISOString()};
-  let data;
-  if(type==='leads') data = {...base, name:S.newForm.name||'Untitled lead', side:S.newForm.side||'Customer', country:S.newForm.country||'', interest:S.newForm.interest||APIS[0], stage:'New', next:'', source:'', value:0};
-  else if(type==='customers') data = {...base, name:S.newForm.name||'Untitled customer', country:'', countries:[S.newForm.country].filter(Boolean), industry:S.newForm.industry||'', website:'', status:'Prospect', apis:[], arr:0};
-  else if(type==='providers') data = {...base, name:S.newForm.name||'Untitled provider', country:S.newForm.country||'', kind:S.newForm.kind||PROVIDER_KINDS[0], network:'', users:0, status:'Prospect', coverage:[], apis:[0,0,0,0]};
-  else if(type==='partners') data = {...base, name:S.newForm.name||'Untitled partner', kicker:S.newForm.kicker||PARTNER_KICKERS[0], body:S.newForm.body||'', status:'Prospect', share:'', joint:0, since:'', intros:[]};
-  const id = await dbAdd(type, data);
-  S.showNew = false;
-  window.openRecord(type, id);
+  try {
+    const base = {owner:curAuthorName(), contacts:[], createdAt:new Date().toISOString()};
+    let data;
+    if(type==='leads') data = {...base, name:S.newForm.name||'Untitled lead', side:S.newForm.side||'Customer', country:S.newForm.country||'', interest:S.newForm.interest||APIS[0], stage:'New', next:'', source:'', value:0};
+    else if(type==='customers') data = {...base, name:S.newForm.name||'Untitled customer', country:'', countries:[S.newForm.country].filter(Boolean), industry:S.newForm.industry||'', website:'', status:'Prospect', apis:[], arr:0};
+    else if(type==='providers') data = {...base, name:S.newForm.name||'Untitled provider', country:S.newForm.country||'', kind:S.newForm.kind||PROVIDER_KINDS[0], network:'', users:0, status:'Prospect', coverage:[], apis:APIS.map(()=>0)};
+    else if(type==='partners') data = {...base, name:S.newForm.name||'Untitled partner', kicker:S.newForm.kicker||PARTNER_KICKERS[0], body:S.newForm.body||'', status:'Prospect', share:'', joint:0, since:'', intros:[]};
+    const id = await dbAdd(type, data);
+    S.showNew = false;
+    window.openRecord(type, id);
+  } catch(e) {
+    console.error('saveNew failed:', e);
+    alert('Could not create record. Error: ' + (e && e.message || e));
+  }
 };
 
 window.reassignAM = async function(newOwner){
@@ -1079,9 +1178,15 @@ window.reassignAM = async function(newOwner){
   const rec = recordOf(type,id);
   const oldOwner = rec.owner;
   if(newOwner===oldOwner) return;
-  await dbUpdate(type, id, {owner:newOwner});
-  await dbAdd('logEntries', {recordType:type, recordId:id, parentId:null, kind:'Note', author:curAuthorName(), text:`Account manager changed from ${oldOwner} to ${newOwner}.`, follow:false, followDate:null, followDone:false, closedOn:null, createdAt:new Date().toISOString()});
-  render();
+  try {
+    await dbUpdate(type, id, {owner:newOwner});
+    await dbAdd('logEntries', {recordType:type, recordId:id, parentId:null, kind:'Note', author:curAuthorName(), text:`Account manager changed from ${oldOwner} to ${newOwner}.`, follow:false, followDate:null, followDone:false, closedOn:null, createdAt:new Date().toISOString()});
+    render();
+  } catch(e) {
+    console.error('reassignAM failed:', e);
+    alert('Could not reassign — Error: ' + (e && e.message || e));
+    render();
+  }
 };
 
 window.focusComposer = function(){
@@ -1095,17 +1200,27 @@ window.toggleFollow = function(){ S.follow=!S.follow; render(); };
 window.setFollowDate = function(v){ S.followDate=v; };
 window.postLog = async function(type,id){
   if(!S.draft || !S.draft.trim()) return;
-  await dbAdd('logEntries', {
-    recordType:type, recordId:id, parentId:null, kind:S.draftKind, author:curAuthorName(), initials:initials(curAuthorName()),
-    text:S.draft.trim(), follow:S.follow, followDate:S.follow?S.followDate:null, followDone:false, closedOn:null, createdAt:new Date().toISOString()
-  });
-  S.draft=''; S.draftKind='Note'; S.follow=false; S.followDate=addDays(7);
-  render();
+  try {
+    await dbAdd('logEntries', {
+      recordType:type, recordId:id, parentId:null, kind:S.draftKind, author:curAuthorName(), initials:initials(curAuthorName()),
+      text:S.draft.trim(), follow:S.follow, followDate:S.follow?S.followDate:null, followDone:false, closedOn:null, createdAt:new Date().toISOString()
+    });
+    S.draft=''; S.draftKind='Note'; S.follow=false; S.followDate=addDays(7);
+    render();
+  } catch(e) {
+    console.error('postLog failed:', e);
+    alert('Could not post — nothing was lost, your text is still in the box. Error: ' + (e && e.message || e));
+  }
 };
 window.setLogTab = function(v){ S.logTab=v; render(); };
 window.markDone = async function(type,id,entryId){
-  await dbUpdate('logEntries', entryId, {follow:false, followDone:true, closedOn:new Date().toISOString().slice(0,10)});
-  render();
+  try {
+    await dbUpdate('logEntries', entryId, {follow:false, followDone:true, closedOn:new Date().toISOString().slice(0,10)});
+    render();
+  } catch(e) {
+    console.error('markDone failed:', e);
+    alert('Could not mark as done. Error: ' + (e && e.message || e));
+  }
 };
 window.startReply = function(entryId){ S.replyTo=entryId; S.replyText=''; S.replyKind='Note'; S.replyFollow=true; S.replyDate=addDays(14); render(); };
 window.cancelReply = function(){ S.replyTo=null; render(); };
@@ -1115,13 +1230,18 @@ window.toggleReplyFollow = function(){ S.replyFollow=!S.replyFollow; render(); }
 window.setReplyDate = function(v){ S.replyDate=v; };
 window.postReply = async function(type,id,parentId){
   if(!S.replyText || !S.replyText.trim()) return;
-  await dbUpdate('logEntries', parentId, {follow:false, followDone:true, closedOn:new Date().toISOString().slice(0,10)});
-  await dbAdd('logEntries', {
-    recordType:type, recordId:id, parentId, kind:S.replyKind, author:curAuthorName(), initials:initials(curAuthorName()),
-    text:S.replyText.trim(), follow:S.replyFollow, followDate:S.replyFollow?S.replyDate:null, followDone:false, closedOn:null, createdAt:new Date().toISOString()
-  });
-  S.replyTo=null;
-  render();
+  try {
+    await dbUpdate('logEntries', parentId, {follow:false, followDone:true, closedOn:new Date().toISOString().slice(0,10)});
+    await dbAdd('logEntries', {
+      recordType:type, recordId:id, parentId, kind:S.replyKind, author:curAuthorName(), initials:initials(curAuthorName()),
+      text:S.replyText.trim(), follow:S.replyFollow, followDate:S.replyFollow?S.replyDate:null, followDone:false, closedOn:null, createdAt:new Date().toISOString()
+    });
+    S.replyTo=null;
+    render();
+  } catch(e) {
+    console.error('postReply failed:', e);
+    alert('Could not post the outcome — nothing was lost, your text is still in the box. Error: ' + (e && e.message || e));
+  }
 };
 
 // ── Auth ─────────────────────────────────────────────────────────────
@@ -1166,6 +1286,35 @@ window.doSignOut = async function(){
   await fbSignOut(auth);
 };
 
+// ── Settings actions ───────────────────────────────────────────────────
+window.openSettings = function(){
+  S.selected = null;
+  S.view = 'settings';
+  S.settingsForm = { apis:[...APIS], team: TEAM_MEMBERS.map(m=>({...m})) };
+  location.hash = '#/settings';
+  render();
+};
+window.closeSettings = function(){ window.nav('today'); };
+window.settingsAddApi = function(){ S.settingsForm.apis.push(''); render(); };
+window.settingsRemoveApi = function(i){ S.settingsForm.apis.splice(i,1); render(); };
+window.settingsApiChange = function(i,v){ S.settingsForm.apis[i]=v; };
+window.settingsAddMember = function(){ S.settingsForm.team.push({name:'',email:''}); render(); };
+window.settingsRemoveMember = function(i){ S.settingsForm.team.splice(i,1); render(); };
+window.settingsMemberChange = function(i,k,v){ S.settingsForm.team[i][k]=v; };
+window.saveSettingsForm = async function(){
+  try {
+    const apis = S.settingsForm.apis.map(a=>a.trim()).filter(Boolean);
+    const team = S.settingsForm.team.map(m=>({name:(m.name||'').trim(), email:(m.email||'').trim()})).filter(m=>m.name && m.email);
+    if(!apis.length){ alert('Keep at least one tracked API.'); return; }
+    await saveSettings({apis, team});
+    // watchSettings' callback applies APIS/TEAM_MEMBERS + re-renders once the
+    // write round-trips; no need to duplicate that here.
+  } catch(e) {
+    console.error('saveSettingsForm failed:', e);
+    alert('Could not save settings. Error: ' + (e && e.message || e));
+  }
+};
+
 // ── Boot ─────────────────────────────────────────────────────────────
 function wireListeners(){
   dbWatch('leads', rows=>{ DATA.leads=rows; render(); });
@@ -1177,12 +1326,26 @@ function wireListeners(){
     rows.forEach(e=>{ const key=logKey(e.recordType,e.recordId); (LOGS[key]=LOGS[key]||[]).push(e); });
     render();
   });
+  watchSettings(data=>{
+    if(data){
+      if(Array.isArray(data.apis) && data.apis.length) APIS = data.apis;
+      if(Array.isArray(data.team)) TEAM_MEMBERS = data.team;
+      refreshTeam();
+    } else {
+      // Nothing saved yet — seed the shared doc with today's defaults so
+      // every signed-in user starts from the same list, then stop: the
+      // watcher above will fire again with that data once it round-trips.
+      saveSettings({apis:APIS, team:TEAM_MEMBERS}).catch(e=>console.error('Could not seed default settings:', e));
+    }
+    render();
+  });
 }
 function bootApp(){
   document.getElementById('auth-screen').style.display='none';
   document.getElementById('app').style.display='block';
   const h = location.hash.replace(/^#\//,'').split('/');
-  if(h[0] && NAV.some(n=>n.view===h[0])) S.view=h[0];
+  if(h[0]==='settings') S.view='settings';
+  else if(h[0] && NAV.some(n=>n.view===h[0])) S.view=h[0];
   if(['leads','customers','providers','partners'].includes(h[0]) && h[1]) S.selected={type:h[0], id:h[1]};
   wireListeners();
   render();
@@ -1191,6 +1354,7 @@ window.addEventListener('hashchange', ()=>{
   if(!document.getElementById('app').style.display || document.getElementById('app').style.display==='none') return;
   const h = location.hash.replace(/^#\//,'').split('/');
   if(['leads','customers','providers','partners'].includes(h[0]) && h[1]){ S.selected={type:h[0],id:h[1]}; }
+  else if(h[0]==='settings'){ S.view='settings'; S.selected=null; }
   else if(h[0] && NAV.some(n=>n.view===h[0])){ S.view=h[0]; S.selected=null; }
   render();
 });
