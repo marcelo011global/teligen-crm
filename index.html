@@ -12,7 +12,7 @@
   a{color:var(--color-accent-700);text-decoration:none}
   a:hover{color:var(--color-accent)}
   .row-hit:hover{background:var(--color-neutral-200);cursor:pointer}
-  .nav-on{border-left-color:var(--color-accent) !important;color:var(--color-accent);font-weight:600;background:var(--color-neutral-200)}
+  .nav-on{border-left-color:var(--color-accent) !important;color:var(--color-text);font-weight:600;background:var(--color-neutral-200)}
   .nav-off:hover{background:var(--color-neutral-200)}
   .chip{all:unset;box-sizing:border-box;padding:4px 10px;font-size:12px;cursor:pointer;border:1px solid var(--color-divider)}
   .chip.on{background:var(--color-accent-100);color:var(--color-accent-800);border-color:transparent}
@@ -228,14 +228,16 @@ function dueInfo(iso){
   if(diffDays<=7) return {label:`Due in ${diffDays} days`, cls:'tag tag-outline'};
   return {label:'Due '+due.toLocaleDateString('en-US',{month:'short',day:'numeric'}), cls:'tag tag-neutral'};
 }
-// Per-market, per-API status. Same vocabulary as a provider's own Integration
-// status (Prospect/Testing/Contracting/Live) but scoped to one API in one
+// Per-market, per-API status. Close to a provider's own Integration status
+// (Prospect/Testing/Contracting/Live) but scoped to one API in one
 // operator's market — a wholesale provider can be Live on an API for one
 // operator and not offer it at all for another; the two are independent.
-const MARKET_STATUSES = ['', 'Prospect', 'Testing', 'Contracting', 'Live'];
+// "Roadmap" here (vs. that field's "Contracting") reads better for "planned
+// for this specific API/operator but not yet live."
+const MARKET_STATUSES = ['', 'Prospect', 'Testing', 'Roadmap', 'Live'];
 // Highest-precedence-first, for collapsing a provider's many markets into
 // one headline status per API (Providers table, API-coverage filters).
-const MARKET_STATUS_RANK = ['Live', 'Contracting', 'Testing', 'Prospect', ''];
+const MARKET_STATUS_RANK = ['Live', 'Roadmap', 'Testing', 'Prospect', ''];
 function apiCell(status){
   if(!status) return {label:'—', cls:''};
   return {label:status, cls:statusTagCls(status)};
@@ -243,15 +245,14 @@ function apiCell(status){
 // A market's apiFlags array is only as long as APIS was when it was saved —
 // if an API gets added/removed later in Settings, old rows fall out of sync.
 // Also migrates the old 0/1/2 (Not covered/Live/Planned) numeric scheme from
-// before per-market statuses existed: 1→Live, 2→Contracting (closest read of
-// "on the roadmap"), 0→not covered. Always read flags through this rather
-// than the raw array.
+// before per-market statuses existed: 1→Live, 2→Roadmap, 0→not covered.
+// Always read flags through this rather than the raw array.
 function normFlags(row){
   return APIS.map((_,i)=>{
     const v = row && row.apiFlags && row.apiFlags[i];
     if(typeof v === 'string') return MARKET_STATUSES.includes(v) ? v : '';
     if(v === 1) return 'Live';
-    if(v === 2) return 'Contracting';
+    if(v === 2) return 'Roadmap';
     return '';
   });
 }
@@ -362,7 +363,7 @@ function sidebarHTML(){
   return `
   <aside style="border-right:2px solid var(--color-divider);display:flex;flex-direction:column;padding:var(--space-4) 0">
     <div style="padding:0 var(--space-4) var(--space-4);border-bottom:2px solid var(--color-divider)">
-      <img src="logo.png" alt="Teligen" style="height:26px;width:auto;display:block;margin-bottom:6px">
+      <img src="logo.png" alt="Teligen" style="height:40px;width:auto;display:block;margin-bottom:6px">
       <div style="font-size:11px;letter-spacing:0.1em;text-transform:uppercase;color:var(--color-accent)">Network API CRM</div>
     </div>
     <nav style="display:flex;flex-direction:column;padding:var(--space-4) 0">
