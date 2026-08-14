@@ -14,14 +14,14 @@ HTML file, vanilla JS, Firebase, GitHub Pages), same allowed sign-in domains,
 but its own separate Firebase project so CRM data never touches deal data.
 
 ## Live URL
-- Production: https://crm.teligen.io (GitHub Pages, once DNS + repo are set up — see README.md)
+- Production: https://crm.teligen.ai (GitHub Pages, once DNS + repo are set up — see README.md)
 - Until then: open `index.html` directly, or serve it locally — runs in DEMO_MODE (localStorage only, no Firebase needed).
 
 ## Tech Stack
 - **Frontend**: Single HTML file (`index.html`) — vanilla JS, no framework, no build step
 - **Database**: Firebase Firestore — **own project**, not `telecom-deals-f155b`. See README.md to create it.
 - **Auth**: Firebase Auth — Email/Password + Google Sign-In, restricted to `@011global.com` / `@011telecom.com`
-- **Hosting**: GitHub Pages, custom domain `crm.teligen.io` (see `CNAME`) — DNS is on GoDaddy, a `CNAME` record for host `crm` → `marcelo011global.github.io`
+- **Hosting**: GitHub Pages, custom domain `crm.teligen.ai` (see `CNAME`) — a `CNAME` DNS record for host `crm` → `marcelo011global.github.io`. Note: `teligen.ai` may be a different registrar/DNS host than `teligen.io` (the main site) — check before assuming GoDaddy or Route 53.
 - **Design system**: "Modernist" — `styles.css`, flat/architectural, Archivo type, single red accent `#ec3013`, zero border-radius, strong 2px rules. Do not hardcode colors/spacing/fonts outside `var(--*)` tokens already in that file.
 
 ## Firebase Config
@@ -88,6 +88,6 @@ git push origin main
 ## Files
 - `index.html` — entire frontend app.
 - `styles.css` — Modernist design system tokens + components, verbatim from the design handoff.
-- `CNAME` — GitHub Pages custom domain (crm.teligen.io).
+- `CNAME` — GitHub Pages custom domain (crm.teligen.ai).
 - `README.md` — setup steps (Firebase project, GitHub Pages, DNS).
 - `CLAUDE.md` — this file.

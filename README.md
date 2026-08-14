@@ -62,15 +62,17 @@ elsewhere, Firebase won't know or care).
    git push -u origin main
    ```
 3. In the repo's **Settings → Pages**, set source to the `main` branch, `/` (root).
-4. **Settings → Pages → Custom domain**: enter `crm.teligen.io`. GitHub will flag it as unverified until DNS resolves — that's expected at this point. (The `CNAME` file in this repo already contains `crm.teligen.io`, which is what makes GitHub Pages accept traffic for that host once DNS points there.)
-5. **DNS, on GoDaddy** (teligen.io's registrar): sign in to GoDaddy → **My Products** → find `teligen.io` → **DNS** (or "Manage DNS"). Add a record:
+4. **Settings → Pages → Custom domain**: enter `crm.teligen.ai`. GitHub will flag it as unverified until DNS resolves — that's expected at this point. (The `CNAME` file in this repo already contains `crm.teligen.ai`, which is what makes GitHub Pages accept traffic for that host once DNS points there.)
+5. **DNS for teligen.ai** — add a record:
    - **Type**: `CNAME`
    - **Name/Host**: `crm`
    - **Value/Points to**: `marcelo011global.github.io`
-   - **TTL**: leave default (1 hour)
+   - **TTL**: leave default
 
-   If a record already exists for host `crm`, edit it instead of adding a duplicate — GoDaddy only allows one record per name+type.
-6. Save in GoDaddy, then back in GitHub's Pages settings, wait for the domain check to go green (DNS propagation is usually minutes, occasionally a few hours) and tick **Enforce HTTPS** once it's available.
+   Where to add it depends on who actually hosts `teligen.ai`'s DNS — check the registrar's DNS tab first; a domain can be *registered* at one company (e.g. GoDaddy) while its DNS is *hosted* elsewhere (e.g. Amazon Route 53), same as `teligen.io` turned out to be. If it's Route 53: **AWS Console → Route 53 → Hosted zones → teligen.ai → Create record**, same values as above.
+
+   If a `crm` record already exists, edit it instead of adding a duplicate.
+6. Once saved, go back to GitHub's Pages settings and wait for the domain check to go green (DNS propagation is usually minutes, occasionally a few hours), then tick **Enforce HTTPS** once it's available.
 
 ## Team
 
@@ -82,7 +84,7 @@ the script with Teligen's actual account managers before real use.
 
 - `index.html` — the entire app (Firebase config, auth, all six views, record page, relationship log, edit/new modals).
 - `styles.css` — the Modernist design system, verbatim from the design handoff.
-- `CNAME` — GitHub Pages custom domain (`teligen.io`).
+- `CNAME` — GitHub Pages custom domain (`crm.teligen.ai`).
 - `CLAUDE.md` — project notes for future Claude Code sessions.
 
 ## Data model / open decisions
