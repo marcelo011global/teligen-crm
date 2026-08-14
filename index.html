@@ -209,21 +209,38 @@ function dueInfo(iso){
   if(diffDays<=7) return {label:`Due in ${diffDays} days`, cls:'tag tag-outline'};
   return {label:'Due '+due.toLocaleDateString('en-US',{month:'short',day:'numeric'}), cls:'tag tag-neutral'};
 }
-function apiCell(flag){
-  if(flag===1) return {label:'Live', cls:'tag tag-accent'};
-  if(flag===2) return {label:'Planned', cls:'tag tag-outline'};
-  return {label:'—', cls:''};
+// Per-market, per-API status. Same vocabulary as a provider's own Integration
+// status (Prospect/Testing/Contracting/Live) but scoped to one API in one
+// operator's market — a wholesale provider can be Live on an API for one
+// operator and not offer it at all for another; the two are independent.
+const MARKET_STATUSES = ['', 'Prospect', 'Testing', 'Contracting', 'Live'];
+// Highest-precedence-first, for collapsing a provider's many markets into
+// one headline status per API (Providers table, API-coverage filters).
+const MARKET_STATUS_RANK = ['Live', 'Contracting', 'Testing', 'Prospect', ''];
+function apiCell(status){
+  if(!status) return {label:'—', cls:''};
+  return {label:status, cls:statusTagCls(status)};
 }
 // A market's apiFlags array is only as long as APIS was when it was saved —
 // if an API gets added/removed later in Settings, old rows fall out of sync.
-// Always read flags through this so a missing index just reads as "not covered".
-function normFlags(row){ return APIS.map((_,i)=>(row && row.apiFlags && row.apiFlags[i]) || 0); }
+// Also migrates the old 0/1/2 (Not covered/Live/Planned) numeric scheme from
+// before per-market statuses existed: 1→Live, 2→Contracting (closest read of
+// "on the roadmap"), 0→not covered. Always read flags through this rather
+// than the raw array.
+function normFlags(row){
+  return APIS.map((_,i)=>{
+    const v = row && row.apiFlags && row.apiFlags[i];
+    if(typeof v === 'string') return MARKET_STATUSES.includes(v) ? v : '';
+    if(v === 1) return 'Live';
+    if(v === 2) return 'Contracting';
+    return '';
+  });
+}
 function computeApis(coverage){
   return APIS.map((_,i)=>{
-    const rows=(coverage||[]).map(r=>normFlags(r)[i]);
-    if(rows.some(f=>f===1)) return 1;
-    if(rows.some(f=>f===2)) return 2;
-    return 0;
+    const statuses=(coverage||[]).map(r=>normFlags(r)[i]);
+    for(const s of MARKET_STATUS_RANK){ if(statuses.includes(s)) return s; }
+    return '';
   });
 }
 function statusTagCls(status){
@@ -540,7 +557,7 @@ function providerPassesFilter(p){
   if(S.filter==='Mobile Operator'||S.filter==='Wholesale') return p.kind===S.filter;
   if(S.filter.startsWith('api:')){
     const idx=APIS.indexOf(S.filter.slice(4));
-    return (computeApis(p.coverage)[idx]||0)>0;
+    return !!computeApis(p.coverage)[idx];
   }
   return true;
 }
@@ -582,9 +599,9 @@ function tableRows_coverage(){
   rows.sort((a,b)=> (a.country||'').localeCompare(b.country||'') || (a.operator||'').localeCompare(b.operator||''));
   rows = rows.filter(r=>{
     if(S.filter==='all') return true;
-    if(S.filter==='live') return r.apiFlags.some(f=>f===1);
+    if(S.filter==='live') return r.apiFlags.some(f=>f==='Live');
     if(S.filter==='Mobile Operator'||S.filter==='Wholesale') return r.provider.kind===S.filter;
-    if(S.filter.startsWith('api:')){ const idx=APIS.indexOf(S.filter.slice(4)); return (r.apiFlags[idx]||0)>0; }
+    if(S.filter.startsWith('api:')){ const idx=APIS.indexOf(S.filter.slice(4)); return !!r.apiFlags[idx]; }
     return true;
   }).filter(r=>!S.q || (r.country+' '+r.operator+' '+r.provider.name).toLowerCase().includes(S.q.toLowerCase()));
   let lastCountry=null;
@@ -640,7 +657,7 @@ function recordStats(type, rec){
     const apis=computeApis(rec.coverage);
     const lastLog=entriesFor(type,rec.id).sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||''))[0];
     return [
-      {k:'APIs live', v:apis.filter(f=>f===1).length+' / '+APIS.length},
+      {k:'APIs live', v:apis.filter(f=>f==='Live').length+' / '+APIS.length},
       {k:'Footprint', v:(rec.coverage||[]).length+' markets'},
       {k:'Integration', v:rec.status},
       {k:'Last contact', v: lastLog?relTime(lastLog.createdAt):'—'}
@@ -962,9 +979,15 @@ function coverageEditorHTML(){
         <div class="field"><label>Country</label><input class="input" value="${esc(r.country)}" onchange="covFieldChange(${i},'country',this.value)" placeholder="e.g. Germany"></div>
         <div class="field"><label>Operator / network</label><input class="input" value="${esc(r.operator)}" onchange="covFieldChange(${i},'operator',this.value)" placeholder="e.g. Telekom"></div>
         <div style="grid-column:1 / -1">
-          <div style="font-size:11px;letter-spacing:0.1em;text-transform:uppercase;color:var(--color-neutral-700);margin-bottom:6px">APIs covered in this market</div>
-          <div style="display:flex;flex-wrap:wrap;gap:4px">
-            ${normFlags(r).map((f,ai)=>{const c=apiCell(f);return `<button onclick="cycleCovApi(${i},${ai})" class="chip ${f?'on':''}" style="padding:6px 10px">${APIS[ai]}: ${c.label}</button>`}).join('')}
+          <div style="font-size:11px;letter-spacing:0.1em;text-transform:uppercase;color:var(--color-neutral-700);margin-bottom:6px">Status per API for this operator</div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:var(--space-2)">
+            ${normFlags(r).map((f,ai)=>`
+              <div class="field" style="margin:0">
+                <label>${esc(APIS[ai])}</label>
+                <select class="input" onchange="setCovApiStatus(${i},${ai},this.value)">
+                  ${MARKET_STATUSES.map(s=>`<option value="${esc(s)}" ${f===s?'selected':''}>${s?esc(s):'Not covered'}</option>`).join('')}
+                </select>
+              </div>`).join('')}
           </div>
         </div>
       </div>`).join('')}
@@ -1119,14 +1142,16 @@ window.openEdit = function(){
 };
 window.closeEdit = function(){ S.showEdit=false; render(); };
 window.editFieldChange = function(k,v,isList){ S.editForm[k] = isList ? v.split(',').map(s=>s.trim()).filter(Boolean) : v; };
-window.addCovRow = function(){ S.editCov.push({country:'',operator:'',apiFlags:APIS.map(()=>0)}); render(); };
+window.addCovRow = function(){ S.editCov.push({country:'',operator:'',apiFlags:APIS.map(()=>'')}); render(); };
 window.removeCovRow = function(i){ S.editCov.splice(i,1); render(); };
 window.covFieldChange = function(i,k,v){ S.editCov[i][k]=v; };
-window.cycleCovApi = function(i,ai){
+window.setCovApiStatus = function(i,ai,value){
   const flags = normFlags(S.editCov[i]);
-  flags[ai] = (flags[ai]+1)%3;
+  flags[ai] = value;
   S.editCov[i].apiFlags = flags;
-  render();
+  // no render() here -- this fires from a <select onchange>, and a select's
+  // own value is already correct on screen; re-rendering mid-interaction
+  // buys nothing and risks losing focus on a later field in the same row.
 };
 window.addIntroRow = function(){ S.editIntros.push({name:'',side:'Customer',country:'',industry:'',stage:'Offered',note:''}); render(); };
 window.removeIntroRow = function(i){ S.editIntros.splice(i,1); render(); };

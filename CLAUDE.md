@@ -35,14 +35,34 @@ the file needs to change when a real project is wired in.
 ## Firestore Collections
 - `leads` — {name, side (Customer|Provider), country, interest (API name), stage, owner, next, value, source, contacts[], createdAt}
 - `customers` — {name, industry, website, countries[], status, owner, apis[], arr, contacts[], createdAt}
-- `providers` — {name, kind (Mobile Operator|Wholesale), country, network, users, status, owner, coverage[{country,operator,apiFlags[4]}], apis[4] (derived — never edited directly, recomputed from coverage on save), contacts[], createdAt}
+- `providers` — {name, kind (Mobile Operator|Wholesale), country, network, users, status, owner, coverage[{country,operator,apiFlags[N]}], apis[N] (derived — never edited directly, recomputed from coverage on save), contacts[], createdAt}
 - `partners` — {name, kicker (Aggregator|Alliance|Technology|Reseller), status, owner, share, joint, since, body, intros[{name,side,country,industry,stage,note}], contacts[], createdAt}
 - `logEntries` — the relationship log, shared across all four record types: {recordType, recordId, parentId (null or another entry's id — makes threads), kind (Note|Call|Email|Commercial), author, initials, text, follow (bool), followDate, followDone (bool), closedOn, createdAt}
+- `settings` — one doc, `settings/config`: {apis: string[], team: [{name, email}]}. Backs the Settings page; see below.
 
 Contacts/coverage/intros are arrays embedded directly on the parent doc (not
 subcollections) — matches the design's "everything saves together in the edit
 sheet" behavior. `apis` on a provider is **derived**: `computeApis(coverage)`
 recomputes it from the per-market `apiFlags` every time coverage is saved.
+
+Each `coverage` row's `apiFlags[i]` is a **status string** — `''` (not
+covered), `'Prospect'`, `'Testing'`, `'Contracting'`, or `'Live'` — one per
+tracked API, per operator, in that market. This is deliberately the *same*
+vocabulary as a provider's own `status` field, but the two are independent:
+`status` is the overall commercial/onboarding stage with that provider,
+while a coverage row's flags are the actual technical rollout for one API
+with one specific operator. This is what lets a wholesale provider be Live
+on an API through one operator and not offer that API at all through
+another operator in the same country — each `{country, operator}` row
+carries its own set of flags. `computeApis()` collapses a provider's rows
+down to one headline status per API (highest-precedence match across all
+its markets: Live > Contracting > Testing > Prospect > not covered) for the
+Providers table and API-coverage filters.
+
+`normFlags(row)` is the only thing that should ever read `apiFlags` — besides
+padding short/legacy arrays out to the current `APIS.length`, it also
+migrates the old pre-Settings numeric scheme (`0`=not covered, `1`=Live,
+`2`=Planned, from before per-market statuses existed) into the new strings.
 
 ## Relationship log / follow-up threading
 This is the trickiest piece and is ported conceptually from the deals
@@ -53,22 +73,26 @@ parentId/createdAt shape). Behavior:
 - "Log outcome & reschedule" opens an inline reply composer under the entry. Posting it (a) closes the parent the same way, and (b) inserts a new entry with `parentId: <parent id>` and its own follow-up date. Children render indented by `depth * 26px`.
 - The **Today** view's "Pending follow-ups" list is every entry across every record type where `follow && !followDone`, scoped by the header's Account manager filter, earliest `followDate` first.
 
-## Team
-`TEAM` (top of `index.html`'s script) is still the design prototype's
-placeholder AM names (`L. Meyer`, `R. Costa`, `S. Haddad`, `M. Lima`,
-`Unassigned`). Replace with Teligen's real account managers before real use —
-it's a plain business-role list, decoupled from actual Firebase Auth accounts
-(same pattern the design intentionally used).
+## Team and tracked APIs
+Both editable from the **Settings** page (link at the bottom of the sidebar)
+instead of hardcoded — see the `settings` collection above. `TEAM_MEMBERS`/
+`APIS` in `index.html` are just the seed defaults used the first time the app
+runs, before Settings has saved anything; after that, Firestore is the
+source of truth and every signed-in user sees the same lists live. Add
+teammates there (name + sign-in email) so their activity attributes
+correctly, and add/rename/remove tracked APIs there as Teligen's product
+lineup changes — no code deploy needed for either.
 
 ## Dashboard Views
 1. **Today** — stat strip (follow-ups open/overdue, due this week, open pipeline, providers pending, silent accounts) + pending follow-ups list + accounts with no logged activity, all scoped by the Account manager filter.
 2. **Leads** — table, filters by side + stage.
 3. **Customers** — table, filters by industry.
-4. **Providers** — table with one column per API (Live/Planned/—), filters by kind/status/API.
-5. **API coverage** — one row per country+operator (derived from every provider's `coverage`), same filters as Providers. Answers "who can serve SIM Swap in Germany, and through whom."
+4. **Providers** — table with one column per API, showing each provider's headline status per API (Live/Contracting/Testing/Prospect/—, collapsed across all its markets by `computeApis()`), filters by kind/status/API.
+5. **API coverage** — one row per country+operator (derived from every provider's `coverage`), same filters as Providers, showing that specific operator's actual per-API status. Answers "who can serve SIM Swap in Germany, and through whom, and what stage is that specific relationship at."
 6. **Partners** — card grid, filters by role (kicker).
-7. **Record page** (shared by all 4 types) — header with AM reassign (writes a system log entry), stat strip, contact list + field sheet on the right, coverage/intros table (provider/partner only) + relationship log on the left.
-8. **Edit modal** — per-type fields, plus coverage editor (cycles Not covered → Live → Planned per API per market) for providers, intros editor for partners, contacts editor for all types.
+7. **Record page** (shared by all 4 types) — header with AM reassign (writes a system log entry) and Delete (confirm-guarded), stat strip, contact list + field sheet on the right, coverage/intros table (provider/partner only) + relationship log on the left.
+8. **Edit modal** — per-type fields, plus a coverage editor (a status dropdown per API per market row — see `MARKET_STATUSES`) for providers, intros editor for partners, contacts editor for all types.
+9. **Settings** — separate from the six main views (sidebar footer link, not in `NAV`) — edits `settings/config` (see above).
 
 ## Open product decisions (carried over from the design handoff)
 1. Provider/Partner overlap — companies like Sinch/Infobip that are both. Currently two separate records; could link them or add role flags to one company record.
@@ -88,6 +112,7 @@ git push origin main
 ## Files
 - `index.html` — entire frontend app.
 - `styles.css` — Modernist design system tokens + components, verbatim from the design handoff.
+- `logo.png` — Teligen wordmark, used in the sidebar and sign-in screen.
 - `CNAME` — GitHub Pages custom domain (crm.teligen.ai).
 - `README.md` — setup steps (Firebase project, GitHub Pages, DNS).
 - `CLAUDE.md` — this file.
