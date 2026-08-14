@@ -117,8 +117,13 @@ function dbWatch(col, cb){
 }
 
 // ── Constants ────────────────────────────────────────────────────────────
-// TODO: replace with the real Teligen account-management team.
-const TEAM = ["L. Meyer","R. Costa","S. Haddad","M. Lima","Unassigned"];
+// TODO: add each new team member's name here as they start using the CRM,
+// and map their sign-in email to it below so records they create get
+// attributed correctly (their Firebase display name may not be set).
+const TEAM = ["Marcelo Licht","Unassigned"];
+const TEAM_BY_EMAIL = {
+  'marcelo@011global.com': 'Marcelo Licht'
+};
 const APIS = ["SIM Swap","Silent Auth","KYC Match","Age Verification"];
 const STAGES = ["New","Qualified","Proposal","Pilot","Contracting"];
 const CUSTOMER_STATUSES = ["Live","Pilot","Onboarding","Prospect"];
@@ -147,7 +152,13 @@ const S = {
 // ── Helpers ──────────────────────────────────────────────────────────────
 function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function initials(name){ if(!name) return '—'; const p=String(name).trim().split(/\s+/); return ((p[0]?.[0]||'')+(p[1]?.[0]||'')).toUpperCase()||'—'; }
-function curAuthorName(){ return (auth && auth.currentUser && (auth.currentUser.displayName||auth.currentUser.email)) || (DEMO_MODE ? 'Demo User' : 'Unknown'); }
+function curAuthorName(){
+  if(DEMO_MODE) return 'Demo User';
+  const u = auth && auth.currentUser;
+  if(!u) return 'Unknown';
+  const email = (u.email||'').toLowerCase();
+  return TEAM_BY_EMAIL[email] || u.displayName || u.email || 'Unknown';
+}
 function fmtMoney(n){ n=Number(n)||0; return '$'+n.toLocaleString('en-US'); }
 function fmtUsers(n){ n=Number(n)||0; if(!n) return '—'; if(n>=1e6) return (n/1e6).toFixed(1)+'M'; if(n>=1e3) return (n/1e3).toFixed(0)+'K'; return String(n); }
 function relTime(iso){
@@ -1052,7 +1063,7 @@ window.closeNew = function(){ S.showNew=false; render(); };
 window.newFieldChange = function(k,v){ S.newForm[k]=v; };
 window.saveNew = async function(){
   const type = S.newForm.__type;
-  const base = {owner:'Unassigned', contacts:[], createdAt:new Date().toISOString()};
+  const base = {owner:curAuthorName(), contacts:[], createdAt:new Date().toISOString()};
   let data;
   if(type==='leads') data = {...base, name:S.newForm.name||'Untitled lead', side:S.newForm.side||'Customer', country:S.newForm.country||'', interest:S.newForm.interest||APIS[0], stage:'New', next:'', source:'', value:0};
   else if(type==='customers') data = {...base, name:S.newForm.name||'Untitled customer', country:'', countries:[S.newForm.country].filter(Boolean), industry:S.newForm.industry||'', website:'', status:'Prospect', apis:[], arr:0};
