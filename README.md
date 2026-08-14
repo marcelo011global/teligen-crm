@@ -39,6 +39,7 @@ elsewhere, Firebase won't know or care).
 3. **Build → Firestore Database → Create database** → start in production mode, pick a region.
 4. **Project settings (gear icon) → General → Your apps → Add app → Web**. Register it (any nickname), copy the `firebaseConfig` object it gives you.
 5. Paste those values into `index.html`, replacing the `firebaseConfig` block near the top of the `<script type="module">` (search for `REPLACE_ME`). Once `apiKey` is no longer `"REPLACE_ME"`, demo mode turns off automatically and the real sign-in screen appears.
+   - Firebase then shows an "Add the Firebase SDK" screen with npm/CDN setup snippets — **nothing to copy from there**. `index.html` already imports the SDK via CDN (`firebase-app.js`, `firebase-auth.js`, `firebase-firestore.js`) and already calls `initializeApp(firebaseConfig)`. Just click through to the console.
 6. Firestore security rules — lock reads/writes to signed-in users. In the Firestore console → **Rules**, use:
    ```
    rules_version = '2';
@@ -61,8 +62,15 @@ elsewhere, Firebase won't know or care).
    git push -u origin main
    ```
 3. In the repo's **Settings → Pages**, set source to the `main` branch, `/` (root).
-4. **Settings → Pages → Custom domain**: enter `teligen.io`. GitHub will show the DNS records to add (the `CNAME` file in this repo already has `teligen.io` in it, which is what makes GitHub Pages serve on that domain once DNS points there).
-5. At your DNS provider for teligen.io, add the records GitHub's Pages settings page shows you (typically a few `A` records for the apex domain, or a `CNAME` record if pointing a subdomain like `crm.teligen.io`).
+4. **Settings → Pages → Custom domain**: enter `crm.teligen.io`. GitHub will flag it as unverified until DNS resolves — that's expected at this point. (The `CNAME` file in this repo already contains `crm.teligen.io`, which is what makes GitHub Pages accept traffic for that host once DNS points there.)
+5. **DNS, on GoDaddy** (teligen.io's registrar): sign in to GoDaddy → **My Products** → find `teligen.io` → **DNS** (or "Manage DNS"). Add a record:
+   - **Type**: `CNAME`
+   - **Name/Host**: `crm`
+   - **Value/Points to**: `marcelo011global.github.io`
+   - **TTL**: leave default (1 hour)
+
+   If a record already exists for host `crm`, edit it instead of adding a duplicate — GoDaddy only allows one record per name+type.
+6. Save in GoDaddy, then back in GitHub's Pages settings, wait for the domain check to go green (DNS propagation is usually minutes, occasionally a few hours) and tick **Enforce HTTPS** once it's available.
 
 ## Team
 
