@@ -801,7 +801,7 @@ function recordPageHTML(){
               <dd style="margin:0;font-size:13px;font-weight:600">${esc(f.v)}</dd>
             </div>`).join('')}
         </dl>
-        ${(type==='customers'||type==='partners') ? documentsSectionHTML(type, rec) : ''}
+        ${(type==='customers'||type==='partners'||type==='providers') ? documentsSectionHTML(type, rec) : ''}
       </aside>
       <section style="order:1;flex:3 1 520px;min-width:0;padding:var(--space-4) var(--space-6) var(--space-8)">
         ${type==='providers' ? providerCoverageHTML(rec) : ''}

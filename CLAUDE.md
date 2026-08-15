@@ -36,7 +36,7 @@ the file needs to change when a real project is wired in.
 ## Firestore Collections
 - `leads` — {name, side (Customer|Provider), country, interest (API name), stage, owner, next, value, source, contacts[], createdAt}
 - `customers` — {name, industry, website, countries[], status, owner, apis[], arr, contacts[], documents[{id,category,name,url,path,uploadedBy,uploadedAt}], createdAt}
-- `providers` — {name, kind (Mobile Operator|Wholesale), country, network, users, status, owner, coverage[{country,operator,apiFlags[N]}], apis[N] (derived — never edited directly, recomputed from coverage on save), contacts[], createdAt}
+- `providers` — {name, kind (Mobile Operator|Wholesale), country, network, users, status, owner, coverage[{country,operator,apiFlags[N]}], apis[N] (derived — never edited directly, recomputed from coverage on save), contacts[], documents[{id,category,name,url,path,uploadedBy,uploadedAt}], createdAt}
 - `partners` — {name, kicker (Aggregator|Alliance|Technology|Reseller), status, owner, share, joint, since, body, intros[{name,side,country,industry,stage,note}], contacts[], documents[{id,category,name,url,path,uploadedBy,uploadedAt}], createdAt}
 - `logEntries` — the relationship log, shared across all four record types: {recordType, recordId, parentId (null or another entry's id — makes threads), kind (Note|Call|Email|Commercial), author, initials, text, follow (bool), followDate, followDone (bool), closedOn, createdAt}
 - `settings` — one doc, `settings/config`: {apis: string[], team: [{name, email}]}. Backs the Settings page; see below.
@@ -46,7 +46,7 @@ subcollections) — matches the design's "everything saves together in the edit
 sheet" behavior. `apis` on a provider is **derived**: `computeApis(coverage)`
 recomputes it from the per-market `apiFlags` every time coverage is saved.
 
-**Documents** (customers and partners only, shown in the right column below
+**Documents** (customers, providers and partners — not leads, shown in the right column below
 the details sheet) work a little differently: unlike everything else,
 uploads/removals write immediately rather than waiting for the edit modal's
 "Save changes" — a file picker doesn't fit that deferred-save pattern. The
