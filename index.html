@@ -778,7 +778,7 @@ function recordPageHTML(){
           <div style="display:flex;align-items:baseline;gap:var(--space-2)">
             <h2 style="margin:0;font-size:13px;letter-spacing:0.08em;text-transform:uppercase">Contact information</h2>
             <span style="font-size:11px;color:var(--color-neutral-700)">${contacts.length}</span>
-            <button class="btn btn-ghost" style="margin-left:auto" onclick="openEdit()">+ Add contact</button>
+            <button class="btn btn-ghost" style="margin-left:auto" onclick="openEdit('contacts')">+ Add contact</button>
           </div>
         </div>
         ${contacts.map(c=>`
@@ -817,7 +817,7 @@ function providerCoverageHTML(rec){
   <div style="margin-bottom:var(--space-6)">
     <div style="display:flex;flex-wrap:wrap;align-items:center;gap:var(--space-3)">
       <h2 style="margin:0;font-size:22px;letter-spacing:-0.01em">Coverage</h2>
-      <button class="btn btn-secondary" style="margin-left:auto" onclick="openEdit()">Manage</button>
+      <button class="btn btn-secondary" style="margin-left:auto" onclick="openEdit('coverage')">Manage</button>
     </div>
     <div style="overflow-x:auto;min-width:0;margin-top:var(--space-3)">
       <table class="table"><thead><tr><th>Country</th><th>Operator / network</th>${APIS.map(a=>`<th>${a}</th>`).join('')}</tr></thead><tbody>
@@ -859,7 +859,7 @@ function partnerIntrosHTML(rec){
   <div style="margin-bottom:var(--space-6)">
     <div style="display:flex;flex-wrap:wrap;align-items:center;gap:var(--space-3)">
       <h2 style="margin:0;font-size:22px;letter-spacing:-0.01em">Prospects they can introduce</h2>
-      <button class="btn btn-secondary" style="margin-left:auto" onclick="openEdit()">Manage</button>
+      <button class="btn btn-secondary" style="margin-left:auto" onclick="openEdit('intros')">Manage</button>
     </div>
     <div style="overflow-x:auto;min-width:0;margin-top:var(--space-3)">
     <table class="table"><thead><tr><th>Company</th><th>Side</th><th>Country</th><th>Industry / type</th><th>Stage</th></tr></thead><tbody>
@@ -990,16 +990,22 @@ function editFieldsFor(type){
 }
 function editModalHTML(){
   const {type,id} = S.selected||{};
-  const isNewFromRecord = false;
   const fields = editFieldsFor(type);
+  // S.editFocus narrows the modal to just one section -- e.g. "+ Add
+  // contact" shouldn't dump someone into the full edit form when all they
+  // wanted was to add a contact. null shows everything (the "Edit record"
+  // button's normal full form).
+  const focus = S.editFocus;
+  const title = focus==='contacts' ? 'Contacts' : focus==='coverage' ? 'Coverage' : focus==='intros' ? 'Prospects they can introduce' : `Edit ${TYPE_LABEL[type]}`;
   return `
   <div style="position:fixed;inset:0;background:color-mix(in srgb,#201e1d 45%,transparent);display:flex;align-items:flex-start;justify-content:center;padding:var(--space-8) var(--space-4);overflow:auto" onclick="closeEdit()">
     <section onclick="event.stopPropagation()" class="elev-lg" style="width:720px;max-width:100%;background:var(--color-bg);border:2px solid var(--color-divider)">
       <header style="display:flex;align-items:center;gap:var(--space-4);padding:var(--space-4) var(--space-6);border-bottom:2px solid var(--color-divider)">
-        <h3 style="margin:0;font-size:22px;letter-spacing:-0.01em;flex:1">Edit ${TYPE_LABEL[type]}</h3>
+        <h3 style="margin:0;font-size:22px;letter-spacing:-0.01em;flex:1">${title}</h3>
         <button class="btn btn-secondary" onclick="closeEdit()">Cancel</button>
         <button class="btn btn-primary" onclick="saveEdit()">Save changes</button>
       </header>
+      ${!focus ? `
       <div style="padding:var(--space-6);display:grid;grid-template-columns:1fr 1fr;gap:var(--space-4)">
         ${fields.map(f=>`
           <div class="field">
@@ -1010,10 +1016,10 @@ function editModalHTML(){
               </select>` : `
               <input class="input" type="${f.kind==='number'?'number':'text'}" value="${esc(f.list ? (S.editForm[f.k]||[]).join(', ') : S.editForm[f.k])}" onchange="editFieldChange('${f.k}',this.value${f.list?',true':''})">`}
           </div>`).join('')}
-      </div>
-      ${type==='providers' ? coverageEditorHTML() : ''}
-      ${type==='partners' ? introsEditorHTML() : ''}
-      ${contactsEditorHTML()}
+      </div>` : ''}
+      ${(focus==='coverage' || (!focus && type==='providers')) ? coverageEditorHTML() : ''}
+      ${(focus==='intros' || (!focus && type==='partners')) ? introsEditorHTML() : ''}
+      ${(!focus || focus==='contacts') ? contactsEditorHTML() : ''}
       <div style="display:flex;justify-content:flex-end;gap:var(--space-2);padding:var(--space-4) var(--space-6);border-top:2px solid var(--color-divider)">
         <button class="btn btn-secondary" onclick="closeEdit()">Cancel</button>
         <button class="btn btn-primary" onclick="saveEdit()">Save changes</button>
@@ -1193,16 +1199,17 @@ window.openRecord = function(type,id,jumpToEntryId){
 };
 window.closeRecord = function(){ const t=S.selected?S.selected.type:S.view; S.selected=null; location.hash='#/'+t; render(); };
 
-window.openEdit = function(){
+window.openEdit = function(focus){
   const {type,id} = S.selected;
   const rec = recordOf(type,id);
   S.editForm = {...rec};
   S.editContacts = JSON.parse(JSON.stringify(rec.contacts||[]));
   S.editCov = JSON.parse(JSON.stringify(rec.coverage||[]));
   S.editIntros = JSON.parse(JSON.stringify(rec.intros||[]));
+  S.editFocus = focus || null;
   S.showEdit = true; render();
 };
-window.closeEdit = function(){ S.showEdit=false; render(); };
+window.closeEdit = function(){ S.showEdit=false; S.editFocus=null; render(); };
 window.editFieldChange = function(k,v,isList){ S.editForm[k] = isList ? v.split(',').map(s=>s.trim()).filter(Boolean) : v; };
 window.addCovRow = function(){ S.editCov.push({country:'',operator:'',apiFlags:APIS.map(()=>'')}); render(); };
 window.removeCovRow = function(i){ S.editCov.splice(i,1); render(); };
@@ -1233,7 +1240,7 @@ window.saveEdit = async function(){
     if(type==='leads' || type==='customers'){ data.value = Number(data.value)||0; data.arr = Number(data.arr)||0; }
     if(type==='providers'){ data.users = Number(data.users)||0; }
     await dbUpdate(type, id, data);
-    S.showEdit = false; render();
+    S.showEdit = false; S.editFocus = null; render();
   } catch(e) {
     console.error('saveEdit failed:', e);
     alert('Could not save — nothing was lost, your edits are still in this form. Error: ' + (e && e.message || e));
