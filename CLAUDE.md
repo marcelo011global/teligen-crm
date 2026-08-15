@@ -20,6 +20,7 @@ but its own separate Firebase project so CRM data never touches deal data.
 ## Tech Stack
 - **Frontend**: Single HTML file (`index.html`) — vanilla JS, no framework, no build step
 - **Database**: Firebase Firestore — **own project**, not `telecom-deals-f155b`. See README.md to create it.
+- **File storage**: Firebase Storage, same project — Documents (NDA/Contract/Interconnection forms/Others) on Customer and Partner records. Chosen over Google Drive specifically because it needed no separate OAuth flow and reuses the exact same "signed-in users only" access rule as Firestore.
 - **Auth**: Firebase Auth — Email/Password + Google Sign-In, restricted to `@011global.com` / `@011telecom.com`
 - **Hosting**: GitHub Pages, custom domain `crm.teligen.ai` (see `CNAME`) — a `CNAME` DNS record for host `crm` → `marcelo011global.github.io`. Note: `teligen.ai` may be a different registrar/DNS host than `teligen.io` (the main site) — check before assuming GoDaddy or Route 53.
 - **Design system**: "Modernist" — `styles.css`, flat/architectural, Archivo type, single red accent `#ec3013`, zero border-radius, strong 2px rules. Do not hardcode colors/spacing/fonts outside `var(--*)` tokens already in that file.
@@ -34,9 +35,9 @@ the file needs to change when a real project is wired in.
 
 ## Firestore Collections
 - `leads` — {name, side (Customer|Provider), country, interest (API name), stage, owner, next, value, source, contacts[], createdAt}
-- `customers` — {name, industry, website, countries[], status, owner, apis[], arr, contacts[], createdAt}
+- `customers` — {name, industry, website, countries[], status, owner, apis[], arr, contacts[], documents[{id,category,name,url,path,uploadedBy,uploadedAt}], createdAt}
 - `providers` — {name, kind (Mobile Operator|Wholesale), country, network, users, status, owner, coverage[{country,operator,apiFlags[N]}], apis[N] (derived — never edited directly, recomputed from coverage on save), contacts[], createdAt}
-- `partners` — {name, kicker (Aggregator|Alliance|Technology|Reseller), status, owner, share, joint, since, body, intros[{name,side,country,industry,stage,note}], contacts[], createdAt}
+- `partners` — {name, kicker (Aggregator|Alliance|Technology|Reseller), status, owner, share, joint, since, body, intros[{name,side,country,industry,stage,note}], contacts[], documents[{id,category,name,url,path,uploadedBy,uploadedAt}], createdAt}
 - `logEntries` — the relationship log, shared across all four record types: {recordType, recordId, parentId (null or another entry's id — makes threads), kind (Note|Call|Email|Commercial), author, initials, text, follow (bool), followDate, followDone (bool), closedOn, createdAt}
 - `settings` — one doc, `settings/config`: {apis: string[], team: [{name, email}]}. Backs the Settings page; see below.
 
@@ -44,6 +45,15 @@ Contacts/coverage/intros are arrays embedded directly on the parent doc (not
 subcollections) — matches the design's "everything saves together in the edit
 sheet" behavior. `apis` on a provider is **derived**: `computeApis(coverage)`
 recomputes it from the per-market `apiFlags` every time coverage is saved.
+
+**Documents** (customers and partners only, shown in the right column below
+the details sheet) work a little differently: unlike everything else,
+uploads/removals write immediately rather than waiting for the edit modal's
+"Save changes" — a file picker doesn't fit that deferred-save pattern. The
+actual bytes go to Firebase Storage at `docs/{type}/{id}/{timestamp}_{filename}`;
+only the metadata (`documents[]` above) lives on the Firestore record.
+`DOC_CATEGORIES` (top of `index.html`) is the fixed list: NDA, Contract,
+Interconnection forms, Others.
 
 Each `coverage` row's `apiFlags[i]` is a **status string** — `''` (not
 covered), `'Prospect'`, `'Testing'`, `'Contracting'`, or `'Live'` — one per

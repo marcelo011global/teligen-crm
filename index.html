@@ -46,11 +46,13 @@
 </div>
 
 <div id="app" style="display:none"></div>
+<input type="file" id="doc-upload-input" style="display:none" onchange="onDocFileChosen(this)">
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut as fbSignOut } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 import { getFirestore, collection, addDoc, updateDoc, deleteDoc, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+import { getStorage, ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js";
 
 // ── Firebase config ─────────────────────────────────────────────────────────
 // TODO: replace with the Teligen CRM's own Firebase project (see README.md).
@@ -68,11 +70,12 @@ const firebaseConfig = {
 const DEMO_MODE = firebaseConfig.apiKey === "REPLACE_ME";
 const ALLOWED_DOMAINS = ['@011global.com','@011telecom.com'];
 
-let auth = null, db = null;
+let auth = null, db = null, storage = null;
 if (!DEMO_MODE) {
   const app = initializeApp(firebaseConfig);
   auth = getAuth(app);
   db = getFirestore(app);
+  storage = getStorage(app);
 }
 
 // ── Tiny data layer — same call shape whether backed by Firestore or, in
@@ -179,6 +182,12 @@ const PARTNER_KICKERS = ["Aggregator","Alliance","Technology","Reseller"];
 const CONTACT_KINDS = ["Primary","Technical","Commercial","Billing","Compliance"];
 const LOG_KINDS = ["Note","Call","Email","Commercial"];
 const TYPE_LABEL = {leads:'Lead', customers:'Customer', providers:'Provider', partners:'Partner'};
+// Documents live only on customers and partners (see documentsSectionHTML).
+// Stored in Firebase Storage under docs/{type}/{id}/..., with just the
+// metadata (name, url, storage path, category, uploader) kept on the
+// record's own `documents` array in Firestore -- same "embedded array"
+// pattern as contacts/coverage/intros.
+const DOC_CATEGORIES = ["NDA","Contract","Interconnection forms","Others"];
 
 let DATA = {leads:[], customers:[], providers:[], partners:[]};
 let LOGS = {}; // `${type}:${id}` -> entries (unsorted; render sorts)
@@ -792,6 +801,7 @@ function recordPageHTML(){
               <dd style="margin:0;font-size:13px;font-weight:600">${esc(f.v)}</dd>
             </div>`).join('')}
         </dl>
+        ${(type==='customers'||type==='partners') ? documentsSectionHTML(type, rec) : ''}
       </aside>
       <section style="order:1;flex:3 1 520px;min-width:0;padding:var(--space-4) var(--space-6) var(--space-8)">
         ${type==='providers' ? providerCoverageHTML(rec) : ''}
@@ -817,6 +827,31 @@ function providerCoverageHTML(rec){
     </div>
     ${!rows.length?`<div style="padding:var(--space-4) 0;font-size:13px;color:var(--color-neutral-700)">No markets mapped — use Manage to add the first country and operator.</div>`:''}
   </div>`;
+}
+function documentsSectionHTML(type, rec){
+  const docs = rec.documents||[];
+  return `
+    <div style="padding:var(--space-6) var(--space-6) var(--space-2);border-top:2px solid var(--color-divider)">
+      <h2 style="margin:0;font-size:13px;letter-spacing:0.08em;text-transform:uppercase">Documents</h2>
+    </div>
+    ${DOC_CATEGORIES.map(cat=>{
+      const catDocs = docs.filter(d=>d.category===cat);
+      return `
+      <div style="padding:var(--space-3) var(--space-6);border-top:1px solid var(--color-divider)">
+        <div style="display:flex;align-items:center;gap:var(--space-2)">
+          <span style="font-size:13px;font-weight:600">${esc(cat)}</span>
+          <span style="font-size:11px;color:var(--color-neutral-700)">${catDocs.length}</span>
+          <button class="btn btn-ghost" style="margin-left:auto" onclick="triggerDocUpload('${type}','${rec.id}','${esc(cat)}')">+ Upload</button>
+        </div>
+        ${catDocs.map(d=>`
+          <div style="display:flex;align-items:center;gap:var(--space-2);margin-top:6px">
+            <a href="${esc(d.url)}" target="_blank" rel="noopener" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px">${esc(d.name)}</a>
+            <span style="font-size:11px;color:var(--color-neutral-600);white-space:nowrap">${relTime(d.uploadedAt)}</span>
+            <button class="btn btn-ghost" onclick="removeDocument('${type}','${rec.id}','${d.id}')">Remove</button>
+          </div>`).join('')}
+      </div>`;
+    }).join('')}
+  `;
 }
 function partnerIntrosHTML(rec){
   const rows = rec.intros||[];
@@ -1226,6 +1261,63 @@ window.saveNew = async function(){
   }
 };
 
+// ── Documents ─────────────────────────────────────────────────────────
+function genDocId(){ return 'doc'+Math.random().toString(36).slice(2,10)+Date.now().toString(36); }
+let _pendingUpload = null;
+window.triggerDocUpload = function(type, id, category){
+  _pendingUpload = {type, id, category};
+  document.getElementById('doc-upload-input').click();
+};
+window.onDocFileChosen = async function(inputEl){
+  const file = inputEl.files[0];
+  const ctx = _pendingUpload;
+  inputEl.value = ''; // so picking the same file again still fires change
+  _pendingUpload = null;
+  if(!file || !ctx) return;
+  const {type,id,category} = ctx;
+  try {
+    let url, path = null;
+    if(DEMO_MODE){
+      // No real storage in demo mode -- a blob URL works for trying the UI
+      // in this tab, but won't survive a reload or another browser.
+      url = URL.createObjectURL(file);
+    } else {
+      path = `docs/${type}/${id}/${Date.now()}_${file.name}`;
+      const sref = storageRef(storage, path);
+      await uploadBytes(sref, file);
+      url = await getDownloadURL(sref);
+    }
+    const rec = recordOf(type, id);
+    const documents = [...(rec.documents||[]), {
+      id: genDocId(), category, name: file.name, url, path,
+      uploadedBy: curAuthorName(), uploadedAt: new Date().toISOString()
+    }];
+    await dbUpdate(type, id, {documents});
+    render();
+  } catch(e) {
+    console.error('Document upload failed:', e);
+    alert('Could not upload the file. Error: ' + (e && e.message || e));
+  }
+};
+window.removeDocument = async function(type, id, docId){
+  if(!confirm('Remove this document? This cannot be undone.')) return;
+  try {
+    const rec = recordOf(type, id);
+    const target = (rec.documents||[]).find(d=>d.id===docId);
+    const documents = (rec.documents||[]).filter(d=>d.id!==docId);
+    await dbUpdate(type, id, {documents});
+    if(target && target.path && !DEMO_MODE){
+      // Best-effort: the Firestore reference is already gone either way, so
+      // don't block on this or surface an error if the storage object is
+      // already missing for some reason.
+      deleteObject(storageRef(storage, target.path)).catch(()=>{});
+    }
+    render();
+  } catch(e) {
+    console.error('removeDocument failed:', e);
+    alert('Could not remove the document. Error: ' + (e && e.message || e));
+  }
+};
 window.deleteRecord = async function(){
   const {type,id} = S.selected;
   const rec = recordOf(type,id);

@@ -52,6 +52,18 @@ elsewhere, Firebase won't know or care).
    }
    ```
    (The domain restriction already happens at sign-up in the app; this rule just keeps signed-out requests out of Firestore entirely.)
+7. **Build → Storage → Get started** — for the Documents section on Customer/Partner records (NDAs, contracts, interconnection forms). Pick the same region as Firestore.
+8. Storage security rules — same idea as Firestore's, in the Storage console → **Rules**:
+   ```
+   rules_version = '2';
+   service firebase.storage {
+     match /b/{bucket}/o {
+       match /{allPaths=**} {
+         allow read, write: if request.auth != null;
+       }
+     }
+   }
+   ```
 
 ## Setup — 2. GitHub repo + hosting
 
