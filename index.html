@@ -657,7 +657,7 @@ function tableRows_coverage(){
   return {html, count: rows.length};
 }
 function cardRows_partners(){
-  const rows = DATA.partners.filter(p=>ownerOk(p.owner)&&(S.filter==='all'||p.kicker===S.filter)&&searchOk(p,[p.body]));
+  const rows = DATA.partners.filter(p=>ownerOk(p.owner)&&(S.filter==='all'||p.kicker===S.filter)&&searchOk(p,[p.body,p.website]));
   const html = `
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:var(--space-4);padding-top:var(--space-4)">
       ${rows.map(p=>{
@@ -719,7 +719,7 @@ function recordFields(type, rec){
     {k:'Users', v:fmtUsers(rec.users)}, {k:'Status', v:rec.status}, {k:'Owner', v:rec.owner}
   ];
   if(type==='partners') return [
-    {k:'Role', v:rec.kicker}, {k:'Status', v:rec.status||'—'}, {k:'Revenue share', v:rec.share||'—'},
+    {k:'Role', v:rec.kicker}, {k:'Website', v:rec.website||'—'}, {k:'Status', v:rec.status||'—'}, {k:'Revenue share', v:rec.share||'—'},
     {k:'Joint customers', v:rec.joint||0}, {k:'Partner since', v:rec.since||'—'}, {k:'Owner', v:rec.owner}
   ];
   return [];
@@ -989,9 +989,10 @@ function editFieldsFor(type){
   ];
   if(type==='partners') return [
     {k:'name',label:'Name',kind:'text'}, {k:'kicker',label:'Role',kind:'select',opts:PARTNER_KICKERS},
-    {k:'status',label:'Status',kind:'text'}, {k:'owner',label:'Account manager',kind:'select',opts:TEAM},
-    {k:'share',label:'Revenue share',kind:'text'}, {k:'joint',label:'Joint customers',kind:'number'},
-    {k:'since',label:'Partner since',kind:'text'}, {k:'body',label:'Summary',kind:'text'}
+    {k:'website',label:'Website',kind:'text'}, {k:'status',label:'Status',kind:'text'},
+    {k:'owner',label:'Account manager',kind:'select',opts:TEAM}, {k:'share',label:'Revenue share',kind:'text'},
+    {k:'joint',label:'Joint customers',kind:'number'}, {k:'since',label:'Partner since',kind:'text'},
+    {k:'body',label:'Summary',kind:'text'}
   ];
   return [];
 }
@@ -1268,7 +1269,7 @@ window.saveNew = async function(){
     if(type==='leads') data = {...base, name:S.newForm.name||'Untitled lead', side:S.newForm.side||'Customer', country:S.newForm.country||'', interest:S.newForm.interest||APIS[0], stage:'New', next:'', source:'', value:0};
     else if(type==='customers') data = {...base, name:S.newForm.name||'Untitled customer', country:'', countries:[S.newForm.country].filter(Boolean), industry:S.newForm.industry||'', website:'', status:'Prospect', apis:[], arr:0};
     else if(type==='providers') data = {...base, name:S.newForm.name||'Untitled provider', country:S.newForm.country||'', kind:S.newForm.kind||PROVIDER_KINDS[0], network:'', users:0, status:'Prospect', coverage:[], apis:APIS.map(()=>0)};
-    else if(type==='partners') data = {...base, name:S.newForm.name||'Untitled partner', kicker:S.newForm.kicker||PARTNER_KICKERS[0], body:S.newForm.body||'', status:'Prospect', share:'', joint:0, since:'', intros:[]};
+    else if(type==='partners') data = {...base, name:S.newForm.name||'Untitled partner', kicker:S.newForm.kicker||PARTNER_KICKERS[0], website:'', body:S.newForm.body||'', status:'Prospect', share:'', joint:0, since:'', intros:[]};
     const id = await dbAdd(type, data);
     S.showNew = false;
     window.openRecord(type, id);

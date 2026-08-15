@@ -37,7 +37,7 @@ the file needs to change when a real project is wired in.
 - `leads` — {name, side (Customer|Provider), country, interest (API name), stage, owner, next, value, source, contacts[], createdAt}
 - `customers` — {name, industry, website, countries[], status, owner, apis[], arr, contacts[], documents[{id,category,name,url,path,uploadedBy,uploadedAt}], createdAt}
 - `providers` — {name, kind (Mobile Operator|Wholesale), country, network, users, status, owner, coverage[{country,operator,apiFlags[N]}], apis[N] (derived — never edited directly, recomputed from coverage on save), contacts[], documents[{id,category,name,url,path,uploadedBy,uploadedAt}], createdAt}
-- `partners` — {name, kicker (Aggregator|Alliance|Technology|Reseller), status, owner, share, joint, since, body, intros[{name,side,country,industry,stage,note}], contacts[], documents[{id,category,name,url,path,uploadedBy,uploadedAt}], createdAt}
+- `partners` — {name, kicker (Aggregator|Alliance|Technology|Reseller), website, status, owner, share, joint, since, body, intros[{name,side,country,industry,stage,note}], contacts[], documents[{id,category,name,url,path,uploadedBy,uploadedAt}], createdAt}
 - `logEntries` — the relationship log, shared across all four record types: {recordType, recordId, parentId (null or another entry's id — makes threads), kind (Note|Call|Email|Commercial), author, initials, text, follow (bool), followDate, followDone (bool), closedOn, createdAt}
 - `settings` — one doc, `settings/config`: {apis: string[], team: [{name, email}]}. Backs the Settings page; see below.
 
