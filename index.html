@@ -202,7 +202,7 @@ const S = {
   replyTo: null, replyText: '', replyKind: 'Note', replyFollow: true, replyDate: addDays(14),
   showEdit: false, editForm: null, editContacts: [], editCov: [], editIntros: [],
   showNew: false, newForm: null,
-  contactsOpen: false, openDocCats: {} // collapsed by default on the record page; reset per-record in openRecord()
+  contactsOpen: false, documentsOpen: false // collapsed by default on the record page; reset per-record in openRecord()
 };
 
 // ── Helpers ──────────────────────────────────────────────────────────────
@@ -832,29 +832,32 @@ function providerCoverageHTML(rec){
 }
 function documentsSectionHTML(type, rec){
   const docs = rec.documents||[];
+  const open = S.documentsOpen;
   return `
     <div style="padding:var(--space-6) var(--space-6) var(--space-2);border-top:2px solid var(--color-divider)">
-      <h2 style="margin:0;font-size:13px;letter-spacing:0.08em;text-transform:uppercase">Documents</h2>
+      <div style="display:flex;align-items:baseline;gap:var(--space-2);cursor:pointer" onclick="toggleDocumentsOpen()">
+        <span style="font-size:10px;color:var(--color-neutral-700);width:10px">${open?'▾':'▸'}</span>
+        <h2 style="margin:0;font-size:13px;letter-spacing:0.08em;text-transform:uppercase">Documents</h2>
+        <span style="font-size:11px;color:var(--color-neutral-700)">${docs.length}</span>
+      </div>
     </div>
-    ${DOC_CATEGORIES.map(cat=>{
+    ${open ? DOC_CATEGORIES.map(cat=>{
       const catDocs = docs.filter(d=>d.category===cat);
-      const open = !!S.openDocCats[cat];
       return `
       <div style="padding:var(--space-3) var(--space-6);border-top:1px solid var(--color-divider)">
-        <div style="display:flex;align-items:center;gap:var(--space-2);cursor:pointer" onclick="toggleDocCat('${esc(cat)}')">
-          <span style="font-size:10px;color:var(--color-neutral-700);width:10px">${open?'▾':'▸'}</span>
+        <div style="display:flex;align-items:center;gap:var(--space-2)">
           <span style="font-size:13px;font-weight:600">${esc(cat)}</span>
           <span style="font-size:11px;color:var(--color-neutral-700)">${catDocs.length}</span>
-          <button class="btn btn-ghost" style="margin-left:auto" onclick="event.stopPropagation();triggerDocUpload('${type}','${rec.id}','${esc(cat)}')">+ Upload</button>
+          <button class="btn btn-ghost" style="margin-left:auto" onclick="triggerDocUpload('${type}','${rec.id}','${esc(cat)}')">+ Upload</button>
         </div>
-        ${open ? catDocs.map(d=>`
+        ${catDocs.map(d=>`
           <div style="display:flex;align-items:center;gap:var(--space-2);margin-top:6px">
             <a href="${esc(d.url)}" target="_blank" rel="noopener" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px">${esc(d.name)}</a>
             <span style="font-size:11px;color:var(--color-neutral-600);white-space:nowrap">${relTime(d.uploadedAt)}</span>
             <button class="btn btn-ghost" onclick="removeDocument('${type}','${rec.id}','${d.id}')">Remove</button>
-          </div>`).join('') : ''}
+          </div>`).join('')}
       </div>`;
-    }).join('')}
+    }).join('') : ''}
   `;
 }
 function partnerIntrosHTML(rec){
@@ -1197,14 +1200,14 @@ window.setFilter = function(v){ S.filter=v; render(); };
 
 window.openRecord = function(type,id,jumpToEntryId){
   S.selected = {type,id}; S.logTab='All'; S.replyTo=null;
-  S.contactsOpen = false; S.openDocCats = {};
+  S.contactsOpen = false; S.documentsOpen = false;
   location.hash = '#/'+type+'/'+id;
   render();
   if(jumpToEntryId){ setTimeout(()=>window.startReply(jumpToEntryId), 0); }
 };
 window.closeRecord = function(){ const t=S.selected?S.selected.type:S.view; S.selected=null; location.hash='#/'+t; render(); };
 window.toggleContactsOpen = function(){ S.contactsOpen = !S.contactsOpen; render(); };
-window.toggleDocCat = function(cat){ S.openDocCats[cat] = !S.openDocCats[cat]; render(); };
+window.toggleDocumentsOpen = function(){ S.documentsOpen = !S.documentsOpen; render(); };
 
 window.openEdit = function(focus){
   const {type,id} = S.selected;
