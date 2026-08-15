@@ -599,21 +599,17 @@ function tableRows_providers(){
   const rows = DATA.providers.filter(p=>ownerOk(p.owner)&&providerPassesFilter(p)&&searchOk(p,[p.country,p.network]));
   const html = `
     <table class="table"><thead><tr>
-      <th>Provider</th><th>Type</th><th>Country</th><th>Network</th><th style="text-align:right">Users</th><th>Key contact</th>
+      <th>Provider</th><th>Type</th><th>Country</th><th>Network</th>
       ${APIS.map(a=>`<th>${a}</th>`).join('')}
     </tr></thead><tbody>
       ${rows.map(p=>{
         const apis=computeApis(p.coverage);
-        const key=(p.contacts||[])[0];
-        const more=(p.contacts||[]).length>1?`+${(p.contacts||[]).length-1} more`:'';
         return `
         <tr class="row-hit" onclick="openRecord('providers','${p.id}')">
           <td style="font-weight:600">${esc(p.name)}</td>
           <td><span class="tag ${p.kind==='Wholesale'?'tag-neutral':'tag-outline'}">${esc(p.kind==='Wholesale'?'Wholesale':'MNO')}</span></td>
           <td>${esc(p.country)}</td>
           <td style="color:var(--color-neutral-700)">${esc(p.network||'')}</td>
-          <td style="text-align:right;font-variant-numeric:tabular-nums">${fmtUsers(p.users)}</td>
-          <td style="white-space:nowrap">${esc(key?key.name:'—')} <span style="font-size:11px;color:var(--color-neutral-600)">${more}</span></td>
           ${apis.map(f=>{const c=apiCell(f);return `<td><span class="${c.cls}">${c.label}</span></td>`}).join('')}
         </tr>`;}).join('')}
     </tbody></table>
