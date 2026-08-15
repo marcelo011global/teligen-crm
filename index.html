@@ -201,7 +201,8 @@ const S = {
   draft: '', draftKind: 'Note', follow: false, followDate: addDays(7),
   replyTo: null, replyText: '', replyKind: 'Note', replyFollow: true, replyDate: addDays(14),
   showEdit: false, editForm: null, editContacts: [], editCov: [], editIntros: [],
-  showNew: false, newForm: null
+  showNew: false, newForm: null,
+  contactsOpen: false, openDocCats: {} // collapsed by default on the record page; reset per-record in openRecord()
 };
 
 // ── Helpers ──────────────────────────────────────────────────────────────
@@ -775,13 +776,14 @@ function recordPageHTML(){
     <div style="display:flex;flex-wrap:wrap;align-items:stretch">
       <aside style="order:2;flex:1 1 320px;max-width:380px;min-width:300px;border-left:2px solid var(--color-divider)">
         <div style="padding:var(--space-4) var(--space-6) var(--space-2)">
-          <div style="display:flex;align-items:baseline;gap:var(--space-2)">
+          <div style="display:flex;align-items:baseline;gap:var(--space-2);cursor:pointer" onclick="toggleContactsOpen()">
+            <span style="font-size:10px;color:var(--color-neutral-700);width:10px">${S.contactsOpen?'▾':'▸'}</span>
             <h2 style="margin:0;font-size:13px;letter-spacing:0.08em;text-transform:uppercase">Contact information</h2>
             <span style="font-size:11px;color:var(--color-neutral-700)">${contacts.length}</span>
-            <button class="btn btn-ghost" style="margin-left:auto" onclick="openEdit('contacts')">+ Add contact</button>
+            <button class="btn btn-ghost" style="margin-left:auto" onclick="event.stopPropagation();openEdit('contacts')">+ Add contact</button>
           </div>
         </div>
-        ${contacts.map(c=>`
+        ${S.contactsOpen ? contacts.map(c=>`
           <div style="padding:var(--space-3) var(--space-6);border-top:1px solid var(--color-divider);display:grid;gap:3px">
             <div style="display:flex;align-items:center;gap:var(--space-2)">
               <span style="font-weight:600;font-size:14px">${esc(c.name)}</span>
@@ -790,7 +792,7 @@ function recordPageHTML(){
             <div style="font-size:13px;color:var(--color-neutral-700)">${esc(c.role||'')}</div>
             ${c.email?`<a href="mailto:${esc(c.email)}" style="font-size:13px">${esc(c.email)}</a>`:''}
             ${c.phone?`<a href="tel:${esc(c.phone)}" style="font-size:13px;color:var(--color-text);font-variant-numeric:tabular-nums">${esc(c.phone)}</a>`:''}
-          </div>`).join('')}
+          </div>`).join('') : ''}
         <div style="padding:var(--space-6) var(--space-6) var(--space-2);border-top:2px solid var(--color-divider)">
           <h2 style="margin:0;font-size:13px;letter-spacing:0.08em;text-transform:uppercase">${TYPE_LABEL[type]} details</h2>
         </div>
@@ -836,19 +838,21 @@ function documentsSectionHTML(type, rec){
     </div>
     ${DOC_CATEGORIES.map(cat=>{
       const catDocs = docs.filter(d=>d.category===cat);
+      const open = !!S.openDocCats[cat];
       return `
       <div style="padding:var(--space-3) var(--space-6);border-top:1px solid var(--color-divider)">
-        <div style="display:flex;align-items:center;gap:var(--space-2)">
+        <div style="display:flex;align-items:center;gap:var(--space-2);cursor:pointer" onclick="toggleDocCat('${esc(cat)}')">
+          <span style="font-size:10px;color:var(--color-neutral-700);width:10px">${open?'▾':'▸'}</span>
           <span style="font-size:13px;font-weight:600">${esc(cat)}</span>
           <span style="font-size:11px;color:var(--color-neutral-700)">${catDocs.length}</span>
-          <button class="btn btn-ghost" style="margin-left:auto" onclick="triggerDocUpload('${type}','${rec.id}','${esc(cat)}')">+ Upload</button>
+          <button class="btn btn-ghost" style="margin-left:auto" onclick="event.stopPropagation();triggerDocUpload('${type}','${rec.id}','${esc(cat)}')">+ Upload</button>
         </div>
-        ${catDocs.map(d=>`
+        ${open ? catDocs.map(d=>`
           <div style="display:flex;align-items:center;gap:var(--space-2);margin-top:6px">
             <a href="${esc(d.url)}" target="_blank" rel="noopener" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px">${esc(d.name)}</a>
             <span style="font-size:11px;color:var(--color-neutral-600);white-space:nowrap">${relTime(d.uploadedAt)}</span>
             <button class="btn btn-ghost" onclick="removeDocument('${type}','${rec.id}','${d.id}')">Remove</button>
-          </div>`).join('')}
+          </div>`).join('') : ''}
       </div>`;
     }).join('')}
   `;
@@ -1193,11 +1197,14 @@ window.setFilter = function(v){ S.filter=v; render(); };
 
 window.openRecord = function(type,id,jumpToEntryId){
   S.selected = {type,id}; S.logTab='All'; S.replyTo=null;
+  S.contactsOpen = false; S.openDocCats = {};
   location.hash = '#/'+type+'/'+id;
   render();
   if(jumpToEntryId){ setTimeout(()=>window.startReply(jumpToEntryId), 0); }
 };
 window.closeRecord = function(){ const t=S.selected?S.selected.type:S.view; S.selected=null; location.hash='#/'+t; render(); };
+window.toggleContactsOpen = function(){ S.contactsOpen = !S.contactsOpen; render(); };
+window.toggleDocCat = function(cat){ S.openDocCats[cat] = !S.openDocCats[cat]; render(); };
 
 window.openEdit = function(focus){
   const {type,id} = S.selected;
