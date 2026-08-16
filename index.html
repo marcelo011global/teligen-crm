@@ -47,6 +47,7 @@
 
 <div id="app" style="display:none"></div>
 <input type="file" id="doc-upload-input" style="display:none" onchange="onDocFileChosen(this)">
+<iframe id="pdf-export-frame" style="position:fixed;width:0;height:0;border:0;visibility:hidden"></iframe>
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
@@ -432,6 +433,7 @@ function listPageHTML(){
         <input class="input" placeholder="Search" value="${esc(S.q)}" onchange="setSearch(this.value)" onkeydown="if(event.key==='Enter')setSearch(this.value)">
       </div>
       ${S.view==='today' ? `<span style="font-size:12px;color:var(--color-neutral-700);max-width:150px;line-height:1.35">Follow-ups roll up from every relationship log.</span>` : ''}
+      ${S.view==='coverage' ? `<button class="btn btn-secondary" onclick="exportCoverageExcel()">Export to Excel</button><button class="btn btn-primary" onclick="exportCoveragePDF()">Export to PDF</button>` : ''}
       ${meta.recordWord ? `<button class="btn btn-primary" onclick="openNew('${S.view}')">New ${meta.recordWord}</button>` : ''}
     </header>
     ${chips.length ? `
@@ -617,7 +619,9 @@ function tableRows_providers(){
   `;
   return {html, count: rows.length};
 }
-function tableRows_coverage(){
+// Shared by the on-screen table and both exports, so "export what you see"
+// actually means what's currently filtered/searched, not the whole dataset.
+function computeCoverageRows(){
   let rows = [];
   for(const p of DATA.providers){
     if(!ownerOk(p.owner)) continue;
@@ -626,13 +630,16 @@ function tableRows_coverage(){
     }
   }
   rows.sort((a,b)=> (a.country||'').localeCompare(b.country||'') || (a.operator||'').localeCompare(b.operator||''));
-  rows = rows.filter(r=>{
+  return rows.filter(r=>{
     if(S.filter==='all') return true;
     if(S.filter==='live') return r.apiFlags.some(f=>f==='Live');
     if(S.filter==='Mobile Operator'||S.filter==='Wholesale') return r.provider.kind===S.filter;
     if(S.filter.startsWith('api:')){ const idx=APIS.indexOf(S.filter.slice(4)); return !!r.apiFlags[idx]; }
     return true;
   }).filter(r=>!S.q || (r.country+' '+r.operator+' '+r.provider.name).toLowerCase().includes(S.q.toLowerCase()));
+}
+function tableRows_coverage(){
+  const rows = computeCoverageRows();
   let lastCountry=null;
   const html = `
     <table class="table"><thead><tr>
@@ -1331,6 +1338,64 @@ window.removeDocument = async function(type, id, docId){
     console.error('removeDocument failed:', e);
     alert('Could not remove the document. Error: ' + (e && e.message || e));
   }
+};
+// ── API coverage exports ────────────────────────────────────────────────
+function csvCell(v){ v=String(v==null?'':v); return /[",\n]/.test(v) ? '"'+v.replace(/"/g,'""')+'"' : v; }
+function downloadBlob(content, mime, filename){
+  const blob = new Blob([content], {type:mime});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(()=>URL.revokeObjectURL(url), 2000);
+}
+function todayStr(){ return new Date().toISOString().slice(0,10); }
+window.exportCoverageExcel = function(){
+  const rows = computeCoverageRows();
+  const header = ['Country','Operator','Source','Type', ...APIS];
+  const lines = [header, ...rows.map(r=>[r.country, r.operator, r.provider.name, r.provider.kind, ...r.apiFlags.map(f=>f||'Not covered')])];
+  const csv = lines.map(row=>row.map(csvCell).join(',')).join('\r\n');
+  downloadBlob('﻿'+csv, 'text/csv;charset=utf-8;', `teligen-api-coverage-${todayStr()}.csv`);
+};
+window.exportCoveragePDF = function(){
+  const rows = computeCoverageRows();
+  // A hidden same-page iframe rather than window.open() -- popup blockers
+  // (browser-level or corporate policy) can't touch this, and it needs no
+  // permission prompt for the person printing it.
+  const frame = document.getElementById('pdf-export-frame');
+  const win = frame.contentWindow;
+  const logoUrl = location.origin + '/logo.png';
+  const dateLabel = new Date().toLocaleDateString('en-US', {year:'numeric', month:'long', day:'numeric'});
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Teligen — Network API Coverage</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;800&display=swap');
+  *{box-sizing:border-box}
+  body{font-family:'Archivo',system-ui,sans-serif;margin:0;padding:48px;color:#201e1d;background:#fff}
+  .band{display:flex;align-items:center;gap:20px;border-bottom:3px solid #ec3013;padding-bottom:20px;margin-bottom:28px}
+  .band img{height:44px;display:block}
+  h1{font-family:'Archivo',sans-serif;font-weight:800;font-size:28px;margin:0 0 4px;letter-spacing:-0.02em}
+  .sub{font-size:12px;color:#605d5d;text-transform:uppercase;letter-spacing:0.1em}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{text-align:left;font-size:11px;letter-spacing:0.06em;text-transform:uppercase;color:#605d5d;padding:10px 8px;border-bottom:2px solid #201e1d}
+  td{padding:10px 8px;border-bottom:1px solid #d7d3d3}
+  .tag{display:inline-block;font-size:11px;padding:3px 10px}
+  .live{background:#fff2ef;color:#7c1405}
+  .other{border:1px solid #ec3013;color:#ec3013}
+  .none{color:#9b9797}
+  footer{margin-top:36px;font-size:11px;color:#9b9797;text-align:center;letter-spacing:0.05em}
+  @media print{ body{padding:24px} }
+</style></head><body>
+  <div class="band"><img src="${esc(logoUrl)}" alt="Teligen"><div><h1>Network API Coverage</h1><div class="sub">As of ${esc(dateLabel)}</div></div></div>
+  <table><thead><tr><th>Country</th><th>Operator</th>${APIS.map(a=>`<th>${esc(a)}</th>`).join('')}</tr></thead><tbody>
+    ${rows.map(r=>`<tr><td style="font-weight:600">${esc(r.country)}</td><td>${esc(r.operator)}</td>${r.apiFlags.map(f=>f?`<td><span class="tag ${f==='Live'?'live':'other'}">${esc(f)}</span></td>`:'<td><span class="none">—</span></td>').join('')}</tr>`).join('')}
+  </tbody></table>
+  <footer>Teligen · www.teligen.io</footer>
+</body></html>`;
+  win.document.open(); win.document.write(html); win.document.close();
+  const doPrint = () => { try{ win.focus(); win.print(); }catch(e){} };
+  const img = win.document.querySelector('img');
+  if(img && !img.complete) { img.addEventListener('load', doPrint, {once:true}); img.addEventListener('error', doPrint, {once:true}); }
+  else setTimeout(doPrint, 300);
 };
 window.deleteRecord = async function(){
   const {type,id} = S.selected;
