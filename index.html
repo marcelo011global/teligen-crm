@@ -183,6 +183,15 @@ const PARTNER_KICKERS = ["Aggregator","Alliance","Technology","Reseller"];
 const CONTACT_KINDS = ["Primary","Technical","Commercial","Billing","Compliance"];
 const LOG_KINDS = ["Note","Call","Email","Commercial"];
 const TYPE_LABEL = {leads:'Lead', customers:'Customer', providers:'Provider', partners:'Partner'};
+// The 35 sovereign states of the Americas (UN grouping) -- shared checklist
+// for Leads' and Customers' countries-of-interest, so both feed the same
+// eventual "prospects by country" reporting.
+const AMERICAS_COUNTRIES = [
+  "United States","Canada","Mexico",
+  "Belize","Costa Rica","El Salvador","Guatemala","Honduras","Nicaragua","Panama",
+  "Antigua and Barbuda","Bahamas","Barbados","Cuba","Dominica","Dominican Republic","Grenada","Haiti","Jamaica","Saint Kitts and Nevis","Saint Lucia","Saint Vincent and the Grenadines","Trinidad and Tobago",
+  "Argentina","Bolivia","Brazil","Chile","Colombia","Ecuador","Guyana","Paraguay","Peru","Suriname","Uruguay","Venezuela"
+];
 // Documents live only on customers and partners (see documentsSectionHTML).
 // Stored in Firebase Storage under docs/{type}/{id}/..., with just the
 // metadata (name, url, storage path, category, uploader) kept on the
@@ -526,7 +535,7 @@ function todayHTML(){
         ${silent.map(r=>`
           <div class="row-hit" onclick="openRecord('${r.type}','${r.id}')" style="padding:var(--space-3);border-top:1px solid var(--color-divider)">
             <div style="font-weight:600;font-size:14px">${esc(r.name)}</div>
-            <div style="font-size:12px;color:var(--color-neutral-700)">${TYPE_LABEL[r.type]} · ${esc(r.country||'')}</div>
+            <div style="font-size:12px;color:var(--color-neutral-700)">${TYPE_LABEL[r.type]} · ${esc(recordCountryLabel(r.type, r))}</div>
             <div style="font-size:12px;color:var(--color-neutral-700)">${esc(r.owner)}</div>
           </div>`).join('')}
       </div>
@@ -541,16 +550,16 @@ function applyFilterLead(l){
   return l.stage===S.filter;
 }
 function tableRows_leads(){
-  const rows = DATA.leads.filter(l=>ownerOk(l.owner)&&applyFilterLead(l)&&searchOk(l,[l.country,l.interest,l.next]));
+  const rows = DATA.leads.filter(l=>ownerOk(l.owner)&&applyFilterLead(l)&&searchOk(l,[...(l.countries||[]),l.interest,l.next]));
   const html = `
     <table class="table"><thead><tr>
-      <th>Company</th><th>Side</th><th>Country</th><th>Interest</th><th>Stage</th><th>Owner</th><th>Next step</th><th style="text-align:right">Value</th>
+      <th>Company</th><th>Side</th><th>Countries</th><th>Interest</th><th>Stage</th><th>Owner</th><th>Next step</th><th style="text-align:right">Value</th>
     </tr></thead><tbody>
       ${rows.map(l=>`
         <tr class="row-hit" onclick="openRecord('leads','${l.id}')">
           <td style="font-weight:600">${esc(l.name)}</td>
           <td><span class="tag ${l.side==='Provider'?'tag-outline':'tag-neutral'}">${esc(l.side)}</span></td>
-          <td>${esc(l.country)}</td>
+          <td style="color:var(--color-neutral-700)">${esc((l.countries||[]).join(', '))}</td>
           <td style="color:var(--color-neutral-700)">${esc(l.interest)}</td>
           <td><span class="${stageTagCls(l.stage)}">${esc(l.stage)}</span></td>
           <td>${esc(l.owner)}</td>
@@ -709,7 +718,7 @@ function recordStats(type, rec){
 }
 function recordFields(type, rec){
   if(type==='leads') return [
-    {k:'Side', v:rec.side}, {k:'Country', v:rec.country}, {k:'Interest', v:rec.interest},
+    {k:'Side', v:rec.side}, {k:'Countries', v:(rec.countries||[]).join(', ')||'—'}, {k:'Interest', v:rec.interest},
     {k:'Stage', v:rec.stage}, {k:'Next step', v:rec.next||'—'}, {k:'Source', v:rec.source||'—'},
     {k:'Value', v:fmtMoney(rec.value)}, {k:'Owner', v:rec.owner}
   ];
@@ -732,6 +741,13 @@ function recordBadge1(type, rec){
   if(type==='customers'||type==='providers') return rec.status;
   if(type==='partners') return rec.kicker;
 }
+// Leads/customers hold a countries[] list; providers/partners hold a single
+// country string. One helper so generic cross-type spots (Today's silent
+// list, the record header) don't need to know which.
+function recordCountryLabel(type, rec){
+  if(type==='leads'||type==='customers') return (rec.countries||[]).join(', ');
+  return rec.country||'';
+}
 function recordPageHTML(){
   const {type,id} = S.selected;
   const rec = recordOf(type,id);
@@ -752,7 +768,7 @@ function recordPageHTML(){
           <h1 style="margin:0;font-size:44px;line-height:1;letter-spacing:-0.03em">${esc(rec.name)}</h1>
           <div style="display:flex;flex-wrap:wrap;align-items:center;gap:var(--space-3);margin-top:var(--space-3);font-size:13px">
             <span class="tag tag-accent">${esc(recordBadge1(type,rec)||'')}</span>
-            <span style="color:var(--color-neutral-700)">${esc(rec.country||'')}</span>
+            <span style="color:var(--color-neutral-700)">${esc(recordCountryLabel(type, rec))}</span>
             <span style="display:flex;align-items:center;gap:var(--space-2);padding-left:var(--space-3);border-left:1px solid var(--color-divider)">
               <span class="avatar" style="width:26px;height:26px">${esc(initials(rec.owner))}</span>
               <span style="color:var(--color-neutral-700)">Account manager</span>
@@ -974,13 +990,13 @@ function logSectionHTML(type, rec){
 function editFieldsFor(type){
   if(type==='leads') return [
     {k:'name',label:'Name',kind:'text'}, {k:'side',label:'Side',kind:'select',opts:['Customer','Provider']},
-    {k:'country',label:'Country',kind:'text'}, {k:'interest',label:'Interest',kind:'select',opts:APIS},
+    {k:'interest',label:'Interest',kind:'select',opts:APIS},
     {k:'stage',label:'Stage',kind:'select',opts:STAGES}, {k:'owner',label:'Account manager',kind:'select',opts:TEAM},
     {k:'next',label:'Next step',kind:'text'}, {k:'source',label:'Source',kind:'text'}, {k:'value',label:'Value (USD)',kind:'number'}
   ];
   if(type==='customers') return [
     {k:'name',label:'Name',kind:'text'}, {k:'industry',label:'Industry',kind:'text'},
-    {k:'website',label:'Website',kind:'text'}, {k:'countries',label:'Countries (comma-sep)',kind:'text',list:true},
+    {k:'website',label:'Website',kind:'text'},
     {k:'status',label:'Status',kind:'select',opts:CUSTOMER_STATUSES}, {k:'owner',label:'Account manager',kind:'select',opts:TEAM},
     {k:'apis',label:'APIs in use (comma-sep)',kind:'text',list:true}, {k:'arr',label:'ARR (USD)',kind:'number'}
   ];
@@ -1007,7 +1023,7 @@ function editModalHTML(){
   // wanted was to add a contact. null shows everything (the "Edit record"
   // button's normal full form).
   const focus = S.editFocus;
-  const title = focus==='contacts' ? 'Contacts' : focus==='coverage' ? 'Coverage' : focus==='intros' ? 'Prospects they can introduce' : `Edit ${TYPE_LABEL[type]}`;
+  const title = focus==='contacts' ? 'Contacts' : focus==='coverage' ? 'Coverage' : focus==='intros' ? 'Prospects they can introduce' : focus==='countries' ? 'Countries of interest' : `Edit ${TYPE_LABEL[type]}`;
   return `
   <div style="position:fixed;inset:0;background:color-mix(in srgb,#201e1d 45%,transparent);display:flex;align-items:flex-start;justify-content:center;padding:var(--space-8) var(--space-4);overflow:auto" onclick="closeEdit()">
     <section onclick="event.stopPropagation()" class="elev-lg" style="width:720px;max-width:100%;background:var(--color-bg);border:2px solid var(--color-divider)">
@@ -1030,6 +1046,7 @@ function editModalHTML(){
       </div>` : ''}
       ${(focus==='coverage' || (!focus && type==='providers')) ? coverageEditorHTML() : ''}
       ${(focus==='intros' || (!focus && type==='partners')) ? introsEditorHTML() : ''}
+      ${(focus==='countries' || (!focus && (type==='leads'||type==='customers'))) ? countriesEditorHTML() : ''}
       ${(!focus || focus==='contacts') ? contactsEditorHTML() : ''}
       <div style="display:flex;justify-content:flex-end;gap:var(--space-2);padding:var(--space-4) var(--space-6);border-top:2px solid var(--color-divider)">
         <button class="btn btn-secondary" onclick="closeEdit()">Cancel</button>
@@ -1090,6 +1107,23 @@ function introsEditorHTML(){
       </div>`).join('')}
   </div>`;
 }
+function countriesEditorHTML(){
+  const selected = S.editForm.countries || [];
+  return `
+  <div style="border-top:2px solid var(--color-divider)">
+    <div style="display:flex;align-items:center;gap:var(--space-3);padding:var(--space-4) var(--space-6)">
+      <h4 style="margin:0;font-size:13px;letter-spacing:0.08em;text-transform:uppercase">Countries of interest</h4>
+      <span style="font-size:11px;color:var(--color-neutral-700)">${selected.length} selected</span>
+    </div>
+    <div style="padding:0 var(--space-6) var(--space-4);display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px 12px">
+      ${AMERICAS_COUNTRIES.map(c=>`
+        <label style="display:flex;align-items:center;gap:7px;font-size:13px;cursor:pointer">
+          <input type="checkbox" ${selected.includes(c)?'checked':''} onchange="toggleEditCountry('${esc(c)}')">
+          ${esc(c)}
+        </label>`).join('')}
+    </div>
+  </div>`;
+}
 function contactsEditorHTML(){
   return `
   <div style="border-top:2px solid var(--color-divider)">
@@ -1116,9 +1150,9 @@ function contactsEditorHTML(){
 function newFieldsFor(type){
   if(type==='leads') return [
     {k:'name',label:'Name',kind:'text'}, {k:'side',label:'Side',kind:'select',opts:['Customer','Provider']},
-    {k:'country',label:'Country',kind:'text'}, {k:'interest',label:'Interest',kind:'select',opts:APIS}
+    {k:'country',label:'Country',kind:'select',opts:AMERICAS_COUNTRIES}, {k:'interest',label:'Interest',kind:'select',opts:APIS}
   ];
-  if(type==='customers') return [{k:'name',label:'Name',kind:'text'},{k:'country',label:'Country',kind:'text'},{k:'industry',label:'Industry',kind:'text'}];
+  if(type==='customers') return [{k:'name',label:'Name',kind:'text'},{k:'country',label:'Country',kind:'select',opts:AMERICAS_COUNTRIES},{k:'industry',label:'Industry',kind:'text'}];
   if(type==='providers') return [{k:'name',label:'Name',kind:'text'},{k:'country',label:'Country',kind:'text'},{k:'kind',label:'Type',kind:'select',opts:PROVIDER_KINDS}];
   if(type==='partners') return [{k:'name',label:'Name',kind:'text'},{k:'kicker',label:'Role',kind:'select',opts:PARTNER_KICKERS},{k:'body',label:'Summary',kind:'text'}];
   return [];
@@ -1225,6 +1259,12 @@ window.openEdit = function(focus){
 };
 window.closeEdit = function(){ S.showEdit=false; S.editFocus=null; render(); };
 window.editFieldChange = function(k,v,isList){ S.editForm[k] = isList ? v.split(',').map(s=>s.trim()).filter(Boolean) : v; };
+window.toggleEditCountry = function(country){
+  const list = S.editForm.countries || (S.editForm.countries = []);
+  const i = list.indexOf(country);
+  if(i>=0) list.splice(i,1); else list.push(country);
+  render();
+};
 window.addCovRow = function(){ S.editCov.push({country:'',operator:'',apiFlags:APIS.map(()=>'')}); render(); };
 window.removeCovRow = function(i){ S.editCov.splice(i,1); render(); };
 window.covFieldChange = function(i,k,v){ S.editCov[i][k]=v; };
@@ -1269,8 +1309,8 @@ window.saveNew = async function(){
   try {
     const base = {owner:curAuthorName(), contacts:[], createdAt:new Date().toISOString()};
     let data;
-    if(type==='leads') data = {...base, name:S.newForm.name||'Untitled lead', side:S.newForm.side||'Customer', country:S.newForm.country||'', interest:S.newForm.interest||APIS[0], stage:'New', next:'', source:'', value:0};
-    else if(type==='customers') data = {...base, name:S.newForm.name||'Untitled customer', country:'', countries:[S.newForm.country].filter(Boolean), industry:S.newForm.industry||'', website:'', status:'Prospect', apis:[], arr:0};
+    if(type==='leads') data = {...base, name:S.newForm.name||'Untitled lead', side:S.newForm.side||'Customer', countries:[S.newForm.country].filter(Boolean), interest:S.newForm.interest||APIS[0], stage:'New', next:'', source:'', value:0};
+    else if(type==='customers') data = {...base, name:S.newForm.name||'Untitled customer', countries:[S.newForm.country].filter(Boolean), industry:S.newForm.industry||'', website:'', status:'Prospect', apis:[], arr:0};
     else if(type==='providers') data = {...base, name:S.newForm.name||'Untitled provider', country:S.newForm.country||'', kind:S.newForm.kind||PROVIDER_KINDS[0], network:'', users:0, status:'Prospect', coverage:[], apis:APIS.map(()=>0)};
     else if(type==='partners') data = {...base, name:S.newForm.name||'Untitled partner', kicker:S.newForm.kicker||PARTNER_KICKERS[0], website:'', body:S.newForm.body||'', status:'Prospect', share:'', joint:0, since:'', intros:[]};
     const id = await dbAdd(type, data);

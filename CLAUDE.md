@@ -34,7 +34,7 @@ shape, so every view/interaction is testable with zero setup. Nothing else in
 the file needs to change when a real project is wired in.
 
 ## Firestore Collections
-- `leads` — {name, side (Customer|Provider), country, interest (API name), stage, owner, next, value, source, contacts[], createdAt}
+- `leads` — {name, side (Customer|Provider), countries[], interest (API name), stage, owner, next, value, source, contacts[], createdAt}
 - `customers` — {name, industry, website, countries[], status, owner, apis[], arr, contacts[], documents[{id,category,name,url,path,uploadedBy,uploadedAt}], createdAt}
 - `providers` — {name, kind (Mobile Operator|Wholesale), country, network, users, status, owner, coverage[{country,operator,apiFlags[N]}], apis[N] (derived — never edited directly, recomputed from coverage on save), contacts[], documents[{id,category,name,url,path,uploadedBy,uploadedAt}], createdAt}
 - `partners` — {name, kicker (Aggregator|Alliance|Technology|Reseller), website, status, owner, share, joint, since, body, intros[{name,side,country,industry,stage,note}], contacts[], documents[{id,category,name,url,path,uploadedBy,uploadedAt}], createdAt}
@@ -82,6 +82,17 @@ parentId/createdAt shape). Behavior:
 - "Mark done" closes an entry in place: `follow:false, followDone:true, closedOn:today`.
 - "Log outcome & reschedule" opens an inline reply composer under the entry. Posting it (a) closes the parent the same way, and (b) inserts a new entry with `parentId: <parent id>` and its own follow-up date. Children render indented by `depth * 26px`.
 - The **Today** view's "Pending follow-ups" list is every entry across every record type where `follow && !followDone`, scoped by the header's Account manager filter, earliest `followDate` first.
+
+## Countries of interest (Leads, Customers)
+`AMERICAS_COUNTRIES` (top of `index.html`) is a fixed checklist of the 35
+sovereign states of the Americas — a dedicated section in the edit modal
+(`countriesEditorHTML()`), not a free-text field, so the data stays clean
+enough to eventually build a "prospects by country" report from. Both types
+store it the same way (`countries: string[]`); providers/partners keep a
+single `country` string instead (one home market, not a market list).
+`recordCountryLabel(type, rec)` is the one place that reads either shape —
+use it for any cross-type display rather than reaching for `.country`
+directly on a lead.
 
 ## Team and tracked APIs
 Both editable from the **Settings** page (link at the bottom of the sidebar)
