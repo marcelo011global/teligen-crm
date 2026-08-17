@@ -214,7 +214,8 @@ const S = {
   replyTo: null, replyText: '', replyKind: 'Note', replyFollow: true, replyDate: addDays(14),
   showEdit: false, editForm: null, editContacts: [], editCov: [], editIntros: [],
   showNew: false, newForm: null,
-  contactsOpen: false, documentsOpen: false // collapsed by default on the record page; reset per-record in openRecord()
+  contactsOpen: false, documentsOpen: false, // collapsed by default on the record page; reset per-record in openRecord()
+  statusFilter: [...PROVIDER_STATUSES] // which provider statuses show on Providers + API coverage -- all on by default
 };
 
 // ── Helpers ──────────────────────────────────────────────────────────────
@@ -419,8 +420,8 @@ function viewMeta(){
 function filterChips(){
   if(S.view==='leads') return [{v:'all',l:'All'},{v:'Customer',l:'Customer'},{v:'Provider',l:'Provider'},...STAGES.map(s=>({v:s,l:s}))];
   if(S.view==='customers') return [{v:'all',l:'All'}, ...[...new Set(DATA.customers.map(c=>c.industry).filter(Boolean))].map(i=>({v:i,l:i}))];
-  if(S.view==='providers') return [{v:'all',l:'All'},{v:'live',l:'Live only'},{v:'Mobile Operator',l:'Mobile Operator'},{v:'Wholesale',l:'Wholesale'},...APIS.map(a=>({v:'api:'+a,l:a}))];
-  if(S.view==='coverage') return [{v:'all',l:'All'},{v:'live',l:'Live only'},{v:'providerNotLive',l:'Provider not Live'},{v:'Mobile Operator',l:'Mobile Operator'},{v:'Wholesale',l:'Wholesale'},...APIS.map(a=>({v:'api:'+a,l:a}))];
+  if(S.view==='providers') return [{v:'all',l:'All'},{v:'Mobile Operator',l:'Mobile Operator'},{v:'Wholesale',l:'Wholesale'},...APIS.map(a=>({v:'api:'+a,l:a}))];
+  if(S.view==='coverage') return [{v:'all',l:'All'},{v:'Mobile Operator',l:'Mobile Operator'},{v:'Wholesale',l:'Wholesale'},...APIS.map(a=>({v:'api:'+a,l:a}))];
   if(S.view==='partners') return [{v:'all',l:'All'}, ...PARTNER_KICKERS.map(k=>({v:k,l:k}))];
   return [];
 }
@@ -452,6 +453,11 @@ function listPageHTML(){
     <div style="display:flex;flex-wrap:wrap;align-items:center;gap:var(--space-2);padding:var(--space-3) var(--space-6);border-bottom:1px solid var(--color-divider);min-height:52px">
       ${chips.map(c=>`<button class="chip ${S.filter===c.v?'on':''}" onclick="setFilter('${esc(c.v)}')">${esc(c.l)}</button>`).join('')}
       <span style="margin-left:auto;font-size:12px;color:var(--color-neutral-700)">${rows.count!=null?rows.count+' result'+(rows.count===1?'':'s'):''}</span>
+    </div>` : ''}
+    ${(S.view==='providers'||S.view==='coverage') ? `
+    <div style="display:flex;flex-wrap:wrap;align-items:center;gap:var(--space-2);padding:var(--space-2) var(--space-6);border-bottom:1px solid var(--color-divider)">
+      <span style="font-size:11px;letter-spacing:0.08em;text-transform:uppercase;color:var(--color-neutral-700)">Provider status</span>
+      ${PROVIDER_STATUSES.map(s=>`<button class="chip ${S.statusFilter.includes(s)?'on':''}" onclick="toggleStatusFilter('${esc(s)}')">${esc(s)}</button>`).join('')}
     </div>` : ''}
     <div style="flex:1;overflow:auto;padding:0 var(--space-6) var(--space-8)">
       ${rows.html}
@@ -600,8 +606,8 @@ function tableRows_customers(){
   return {html, count: rows.length};
 }
 function providerPassesFilter(p){
+  if(!S.statusFilter.includes(p.status)) return false;
   if(S.filter==='all') return true;
-  if(S.filter==='live') return p.status==='Live';
   if(S.filter==='Mobile Operator'||S.filter==='Wholesale') return p.kind===S.filter;
   if(S.filter.startsWith('api:')){
     const idx=APIS.indexOf(S.filter.slice(4));
@@ -642,10 +648,8 @@ function computeCoverageRows(){
     }
   }
   rows.sort((a,b)=> (a.country||'').localeCompare(b.country||'') || (a.operator||'').localeCompare(b.operator||''));
-  return rows.filter(r=>{
+  return rows.filter(r=>S.statusFilter.includes(r.provider.status)).filter(r=>{
     if(S.filter==='all') return true;
-    if(S.filter==='live') return r.apiFlags.some(f=>f==='Live');
-    if(S.filter==='providerNotLive') return r.provider.status!=='Live';
     if(S.filter==='Mobile Operator'||S.filter==='Wholesale') return r.provider.kind===S.filter;
     if(S.filter.startsWith('api:')){ const idx=APIS.indexOf(S.filter.slice(4)); return !!r.apiFlags[idx]; }
     return true;
@@ -1239,6 +1243,19 @@ window.nav = function(view){ S.view=view; S.filter='all'; S.q=''; S.selected=nul
 window.setSearch = function(v){ S.q=v; render(); };
 window.setOwnerFilter = function(v){ S.ownerFilter=v; render(); };
 window.setFilter = function(v){ S.filter=v; render(); };
+window.toggleStatusFilter = function(status){
+  const i = S.statusFilter.indexOf(status);
+  if(i>=0){
+    // Never allow the last one off -- an empty filter reading as "show
+    // nothing" is confusing; toggling the only remaining status back on
+    // is the same as "reset to All" without a separate control for it.
+    if(S.statusFilter.length===1) S.statusFilter=[...PROVIDER_STATUSES];
+    else S.statusFilter.splice(i,1);
+  } else {
+    S.statusFilter.push(status);
+  }
+  render();
+};
 
 window.openRecord = function(type,id,jumpToEntryId){
   S.selected = {type,id}; S.logTab='All'; S.replyTo=null;
