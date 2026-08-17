@@ -419,7 +419,8 @@ function viewMeta(){
 function filterChips(){
   if(S.view==='leads') return [{v:'all',l:'All'},{v:'Customer',l:'Customer'},{v:'Provider',l:'Provider'},...STAGES.map(s=>({v:s,l:s}))];
   if(S.view==='customers') return [{v:'all',l:'All'}, ...[...new Set(DATA.customers.map(c=>c.industry).filter(Boolean))].map(i=>({v:i,l:i}))];
-  if(S.view==='providers' || S.view==='coverage') return [{v:'all',l:'All'},{v:'live',l:'Live only'},{v:'Mobile Operator',l:'Mobile Operator'},{v:'Wholesale',l:'Wholesale'},...APIS.map(a=>({v:'api:'+a,l:a}))];
+  if(S.view==='providers') return [{v:'all',l:'All'},{v:'live',l:'Live only'},{v:'Mobile Operator',l:'Mobile Operator'},{v:'Wholesale',l:'Wholesale'},...APIS.map(a=>({v:'api:'+a,l:a}))];
+  if(S.view==='coverage') return [{v:'all',l:'All'},{v:'live',l:'Live only'},{v:'providerNotLive',l:'Provider not Live'},{v:'Mobile Operator',l:'Mobile Operator'},{v:'Wholesale',l:'Wholesale'},...APIS.map(a=>({v:'api:'+a,l:a}))];
   if(S.view==='partners') return [{v:'all',l:'All'}, ...PARTNER_KICKERS.map(k=>({v:k,l:k}))];
   return [];
 }
@@ -552,7 +553,7 @@ function applyFilterLead(l){
   return l.stage===S.filter;
 }
 function tableRows_leads(){
-  const rows = DATA.leads.filter(l=>ownerOk(l.owner)&&applyFilterLead(l)&&searchOk(l,[...(l.countries||[]),l.interest,l.next]));
+  const rows = DATA.leads.filter(l=>ownerOk(l.owner)&&applyFilterLead(l)&&searchOk(l,[...(l.countries||[]),l.interest,l.next])).sort((a,b)=>(a.name||'').localeCompare(b.name||''));
   const html = `
     <table class="table"><thead><tr>
       <th>Company</th><th>Side</th><th>Countries</th><th>Interest</th><th>Stage</th><th>Owner</th><th>Next step</th><th style="text-align:right">Value</th>
@@ -574,7 +575,7 @@ function tableRows_leads(){
   return {html, count: rows.length};
 }
 function tableRows_customers(){
-  const rows = DATA.customers.filter(c=>ownerOk(c.owner)&&(S.filter==='all'||c.industry===S.filter)&&searchOk(c,[c.industry,c.website,...(c.countries||[])]));
+  const rows = DATA.customers.filter(c=>ownerOk(c.owner)&&(S.filter==='all'||c.industry===S.filter)&&searchOk(c,[c.industry,c.website,...(c.countries||[])])).sort((a,b)=>(a.name||'').localeCompare(b.name||''));
   const html = `
     <table class="table"><thead><tr>
       <th>Customer</th><th>Industry</th><th>Website</th><th>Countries</th><th>AM</th><th>Primary contact</th><th>APIs in use</th><th style="text-align:right">ARR</th>
@@ -609,7 +610,7 @@ function providerPassesFilter(p){
   return true;
 }
 function tableRows_providers(){
-  const rows = DATA.providers.filter(p=>ownerOk(p.owner)&&providerPassesFilter(p)&&searchOk(p,[p.country,p.network]));
+  const rows = DATA.providers.filter(p=>ownerOk(p.owner)&&providerPassesFilter(p)&&searchOk(p,[p.country,p.network])).sort((a,b)=>(a.name||'').localeCompare(b.name||''));
   const html = `
     <table class="table"><thead><tr>
       <th>Provider</th><th>Type</th><th>Country</th><th>Network</th>
@@ -644,6 +645,7 @@ function computeCoverageRows(){
   return rows.filter(r=>{
     if(S.filter==='all') return true;
     if(S.filter==='live') return r.apiFlags.some(f=>f==='Live');
+    if(S.filter==='providerNotLive') return r.provider.status!=='Live';
     if(S.filter==='Mobile Operator'||S.filter==='Wholesale') return r.provider.kind===S.filter;
     if(S.filter.startsWith('api:')){ const idx=APIS.indexOf(S.filter.slice(4)); return !!r.apiFlags[idx]; }
     return true;
@@ -662,7 +664,7 @@ function tableRows_coverage(){
         <tr class="row-hit" onclick="openRecord('providers','${r.provider.id}')">
           <td style="font-weight:${showCountry?600:400}">${showCountry?esc(r.country):''}</td>
           <td style="font-weight:600">${esc(r.operator)}</td>
-          <td style="color:var(--color-neutral-700)">${esc(r.provider.name)} <span class="tag ${r.provider.kind==='Wholesale'?'tag-neutral':'tag-outline'}">${r.provider.kind==='Wholesale'?'Wholesale':'MNO'}</span></td>
+          <td style="color:var(--color-neutral-700)">${esc(r.provider.name)} <span class="tag ${r.provider.kind==='Wholesale'?'tag-neutral':'tag-outline'}">${r.provider.kind==='Wholesale'?'Wholesale':'MNO'}</span>${r.provider.status!=='Live'?` <span class="${statusTagCls(r.provider.status)}" title="Provider integration status">${esc(r.provider.status)}</span>`:''}</td>
           ${r.apiFlags.map(f=>{const c=apiCell(f);return `<td><span class="${c.cls}">${c.label}</span></td>`}).join('')}
         </tr>`;}).join('')}
     </tbody></table>
@@ -1394,8 +1396,8 @@ function downloadBlob(content, mime, filename){
 function todayStr(){ return new Date().toISOString().slice(0,10); }
 window.exportCoverageExcel = function(){
   const rows = computeCoverageRows();
-  const header = ['Country','Operator','Source','Type', ...APIS];
-  const lines = [header, ...rows.map(r=>[r.country, r.operator, r.provider.name, r.provider.kind, ...r.apiFlags.map(f=>f||'Not covered')])];
+  const header = ['Country','Operator','Source','Type','Provider status', ...APIS];
+  const lines = [header, ...rows.map(r=>[r.country, r.operator, r.provider.name, r.provider.kind, r.provider.status, ...r.apiFlags.map(f=>f||'Not covered')])];
   const csv = lines.map(row=>row.map(csvCell).join(',')).join('\r\n');
   downloadBlob('﻿'+csv, 'text/csv;charset=utf-8;', `teligen-api-coverage-${todayStr()}.csv`);
 };
