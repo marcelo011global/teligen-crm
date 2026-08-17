@@ -40,6 +40,7 @@ the file needs to change when a real project is wired in.
 - `partners` — {name, kicker (Aggregator|Alliance|Technology|Reseller), website, status, owner, share, joint, since, body, intros[{name,side,country,industry,stage,note}], contacts[], documents[{id,category,name,url,path,uploadedBy,uploadedAt}], createdAt}
 - `logEntries` — the relationship log, shared across all four record types: {recordType, recordId, parentId (null or another entry's id — makes threads), kind (Note|Call|Email|Commercial), author, initials, text, follow (bool), followDate, followDone (bool), closedOn, createdAt}
 - `settings` — one doc, `settings/config`: {apis: string[], team: [{name, email}]}. Backs the Settings page; see below.
+- `materials` — the Materials library (see below), a standalone collection not tied to any other record: {name, cat, kind, format, size, url, fileUrl, path, lang, industry, version, updated, owner, note, createdAt}.
 
 Contacts/coverage/intros are arrays embedded directly on the parent doc (not
 subcollections) — matches the design's "everything saves together in the edit
@@ -111,9 +112,46 @@ lineup changes — no code deploy needed for either.
 4. **Providers** — table with one column per API, showing each provider's headline status per API (Live/Contracting/Testing/Prospect/—, collapsed across all its markets by `computeApis()`), filters by kind/status/API.
 5. **API coverage** — one row per country+operator (derived from every provider's `coverage`), same filters as Providers, showing that specific operator's actual per-API status. Answers "who can serve SIM Swap in Germany, and through whom, and what stage is that specific relationship at."
 6. **Partners** — card grid, filters by role (kicker).
-7. **Record page** (shared by all 4 types) — header with AM reassign (writes a system log entry) and Delete (confirm-guarded), stat strip, contact list + field sheet on the right, coverage/intros table (provider/partner only) + relationship log on the left.
-8. **Edit modal** — per-type fields, plus a coverage editor (a status dropdown per API per market row — see `MARKET_STATUSES`) for providers, intros editor for partners, contacts editor for all types.
-9. **Settings** — separate from the six main views (sidebar footer link, not in `NAV`) — edits `settings/config` (see above).
+7. **Materials** — a shared library of files/links (decks, templates, rate cards, docs portal) grouped by category, in `NAV` like the other six. See its own section below.
+8. **Record page** (shared by leads/customers/providers/partners) — header with AM reassign (writes a system log entry) and Delete (confirm-guarded), stat strip, contact list + field sheet on the right, coverage/intros table (provider/partner only) + relationship log on the left.
+9. **Edit modal** — per-type fields, plus a coverage editor (a status dropdown per API per market row — see `MARKET_STATUSES`) for providers, intros editor for partners, contacts editor for all types.
+10. **Settings** — separate from the seven main views (sidebar footer link, not in `NAV`) — edits `settings/config` (see above).
+
+## Materials library
+A standalone `materials` collection — not attached to any lead/customer/
+provider/partner. Built from a separate design handoff
+(`design_handoff_materials/` under Downloads when this was built) covering
+just this one section plus shell chrome.
+
+- Add row writes immediately (no edit modal): a name and/or a pasted link,
+  a category (`MATERIAL_CATEGORIES`, fixed display order: Legal,
+  Presentation, One pager, Pricing, Marketing), a language
+  (`MATERIAL_LANGS`), and a description.
+- **`url` vs `fileUrl` — kept deliberately separate.** `url` is only ever a
+  *pasted* shareable link (Drive, docs portal, sandbox signup) — it drives
+  `hasUrl` (Open link / Copy link, the "Links only" filter, the visible URL
+  line under the description) and the whole "Shareable links" stat. `fileUrl`
+  is only the Storage download link for an uploaded file, and only drives
+  the Download button. A material can have either, both (a deck with a
+  Drive link), or neither yet (a typed placeholder name with nothing
+  attached). Conflating the two was an actual bug caught in testing — an
+  uploaded PDF was showing up under "Links only" until they were split.
+- Uploads go to Firebase Storage at `materials/{timestamp}_{filename}`
+  (own path prefix, separate from `docs/{type}/{id}/...` used by the
+  Documents section on records) — same bucket, no separate setup.
+- **Format** for an uploaded file is its extension, uppercased, truncated to
+  4 characters (`PDF`, `DOCX`, ...); a pasted link with no file and a
+  dot-free name becomes `format: 'LINK'`. Typing a plain name with neither
+  a real file nor a dot still creates an entry (format `FILE`) — it has no
+  `fileUrl` yet, so no Download button shows until a real file is attached
+  later (not yet built — see the design handoff's "open decisions" #1).
+- **Freshness**: `isFreshMaterial()` — `updated` within `MATERIALS_FRESH_DAYS`
+  (45) earns a "Recently updated" tag and counts toward that stat cell.
+- Only the description edits inline (`startEditMaterialNote` /
+  `saveMaterialNote`) — category/language/version aren't editable yet, per
+  the design handoff's open decisions; re-add via Remove + re-add for now.
+- Sort: fixed category order, then `updated` descending within each
+  category (`computeMaterialsRows()`).
 
 ## Open product decisions (carried over from the design handoff)
 1. Provider/Partner overlap — companies like Sinch/Infobip that are both. Currently two separate records; could link them or add role flags to one company record.
