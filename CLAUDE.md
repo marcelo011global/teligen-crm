@@ -34,7 +34,7 @@ shape, so every view/interaction is testable with zero setup. Nothing else in
 the file needs to change when a real project is wired in.
 
 ## Firestore Collections
-- `leads` — {name, side (Customer|Provider), countries[], interest (API name), stage, owner, next, value, source, contacts[], createdAt}
+- `leads` — {name, side (Customer|Provider), website, countries[], interest (API name), stage, owner, next, value, source, contacts[], documents[{id,category,name,url,path,uploadedBy,uploadedAt}], createdAt}
 - `customers` — {name, industry, website, countries[], status, owner, apis[], arr, contacts[], documents[{id,category,name,url,path,uploadedBy,uploadedAt}], createdAt}
 - `providers` — {name, kind (Mobile Operator|Wholesale), country, network, users, status, owner, coverage[{country,operator,apiFlags[N]}], apis[N] (derived — never edited directly, recomputed from coverage on save), contacts[], documents[{id,category,name,url,path,uploadedBy,uploadedAt}], createdAt}
 - `partners` — {name, kicker (Aggregator|Alliance|Technology|Reseller), website, status, owner, share, joint, since, body, intros[{name,side,country,industry,stage,note}], contacts[], documents[{id,category,name,url,path,uploadedBy,uploadedAt}], createdAt}
@@ -47,7 +47,7 @@ subcollections) — matches the design's "everything saves together in the edit
 sheet" behavior. `apis` on a provider is **derived**: `computeApis(coverage)`
 recomputes it from the per-market `apiFlags` every time coverage is saved.
 
-**Documents** (customers, providers and partners — not leads, shown in the right column below
+**Documents** (all four record types now, shown in the right column below
 the details sheet) work a little differently: unlike everything else,
 uploads/removals write immediately rather than waiting for the edit modal's
 "Save changes" — a file picker doesn't fit that deferred-save pattern. The
@@ -83,6 +83,23 @@ parentId/createdAt shape). Behavior:
 - "Mark done" closes an entry in place: `follow:false, followDone:true, closedOn:today`.
 - "Log outcome & reschedule" opens an inline reply composer under the entry. Posting it (a) closes the parent the same way, and (b) inserts a new entry with `parentId: <parent id>` and its own follow-up date. Children render indented by `depth * 26px`.
 - The **Today** view's "Pending follow-ups" list is every entry across every record type where `follow && !followDone`, scoped by the header's Account manager filter, earliest `followDate` first.
+- The `followDate` on any open follow-up is a plain `<input type="date">` inline (both on Today's list and on the record page's log) — `updateFollowDate(entryId, newDate)` writes it straight through, no confirm needed, since rescheduling isn't destructive.
+
+## Lead conversion
+"Convert to Customer" / "Convert to Provider" on a lead's record page (label
+depends on `lead.side`) — `window.convertLead()`:
+1. Creates a new customer/provider doc, carrying over `name`, `owner`,
+   `contacts`, `documents`, and (customers only) `website`/`countries`/an
+   `apis` entry seeded from `interest`.
+2. Copies the lead's relationship log to the new record via
+   `copyLogEntries()`, remapping `parentId` links to the new entries' ids
+   (old ids don't exist in the new context) — thread structure and original
+   timestamps/authorship survive.
+3. Deletes the lead and its original log entries (now duplicated on the new
+   record) so nothing is left both duplicated and orphaned.
+Confirm-guarded, since step 3 is irreversible. Provider conversion is fairly
+bare (no coverage yet, `country` from the first entry in `countries[]` if
+any) — expect to fill in Coverage manually afterward.
 
 ## Countries of interest (Leads, Customers)
 `AMERICAS_COUNTRIES` (top of `index.html`) is a fixed checklist of the 35

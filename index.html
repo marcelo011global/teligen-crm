@@ -528,9 +528,9 @@ function todayHTML(){
           const due=dueInfo(f.followDate);
           return `
           <div class="row-hit" onclick="openRecord('${f.type}','${f.rec.id}')" style="display:grid;grid-template-columns:168px minmax(0,1fr) auto;gap:var(--space-4);align-items:start;padding:var(--space-4) var(--space-3);border-top:1px solid var(--color-divider)">
-            <div style="display:grid;gap:4px">
+            <div style="display:grid;gap:4px" onclick="event.stopPropagation()">
               <span class="${due.cls}">${due.label}</span>
-              <span style="font-size:12px;color:var(--color-neutral-700);font-variant-numeric:tabular-nums">${esc(f.followDate)}</span>
+              <input type="date" class="input" style="width:auto;padding:2px 6px;font-size:12px;font-variant-numeric:tabular-nums" value="${esc(f.followDate)}" onchange="updateFollowDate('${f.id}',this.value)">
             </div>
             <div style="min-width:0">
               <div style="display:flex;flex-wrap:wrap;align-items:center;gap:var(--space-2)">
@@ -572,7 +572,7 @@ function applyFilterLead(l){
   return l.stage===S.filter;
 }
 function tableRows_leads(){
-  const rows = DATA.leads.filter(l=>ownerOk(l.owner)&&applyFilterLead(l)&&searchOk(l,[...(l.countries||[]),l.interest,l.next])).sort((a,b)=>(a.name||'').localeCompare(b.name||''));
+  const rows = DATA.leads.filter(l=>ownerOk(l.owner)&&applyFilterLead(l)&&searchOk(l,[...(l.countries||[]),l.interest,l.next,l.website])).sort((a,b)=>(a.name||'').localeCompare(b.name||''));
   const html = `
     <table class="table"><thead><tr>
       <th>Company</th><th>Side</th><th>Countries</th><th>Interest</th><th>Stage</th><th>Owner</th><th>Next step</th><th style="text-align:right">Value</th>
@@ -889,7 +889,7 @@ function recordStats(type, rec){
 }
 function recordFields(type, rec){
   if(type==='leads') return [
-    {k:'Side', v:rec.side}, {k:'Countries', v:(rec.countries||[]).join(', ')||'—'}, {k:'Interest', v:rec.interest},
+    {k:'Side', v:rec.side}, {k:'Website', v:rec.website||'—'}, {k:'Countries', v:(rec.countries||[]).join(', ')||'—'}, {k:'Interest', v:rec.interest},
     {k:'Stage', v:rec.stage}, {k:'Next step', v:rec.next||'—'}, {k:'Source', v:rec.source||'—'},
     {k:'Value', v:fmtMoney(rec.value)}, {k:'Owner', v:rec.owner}
   ];
@@ -951,6 +951,7 @@ function recordPageHTML(){
         </div>
         <div style="display:flex;gap:var(--space-2);align-items:center">
           <button class="btn btn-ghost" onclick="deleteRecord()" style="color:var(--color-neutral-700)">Delete</button>
+          ${type==='leads' ? `<button class="btn btn-secondary" onclick="convertLead()">Convert to ${esc(TYPE_LABEL[rec.side==='Provider'?'providers':'customers'])}</button>` : ''}
           <button class="btn btn-secondary" onclick="focusComposer()">Log activity</button>
           <button class="btn btn-primary" onclick="openEdit()">Edit record</button>
         </div>
@@ -993,7 +994,7 @@ function recordPageHTML(){
               <dd style="margin:0;font-size:13px;font-weight:600">${esc(f.v)}</dd>
             </div>`).join('')}
         </dl>
-        ${(type==='customers'||type==='partners'||type==='providers') ? documentsSectionHTML(type, rec) : ''}
+        ${(type==='leads'||type==='customers'||type==='partners'||type==='providers') ? documentsSectionHTML(type, rec) : ''}
       </aside>
       <section style="order:1;flex:3 1 520px;min-width:0;padding:var(--space-4) var(--space-6) var(--space-8)">
         ${type==='providers' ? providerCoverageHTML(rec) : ''}
@@ -1126,7 +1127,7 @@ function logSectionHTML(type, rec){
             <strong>${esc(e.author)}</strong>
             <span class="${logKindCls(e.kind)}">${esc(e.kind)}</span>
             <span style="color:var(--color-neutral-700)">${relTime(e.createdAt)}</span>
-            ${due?`<span class="${due.cls}">Follow up ${esc(e.followDate)}</span><span style="font-size:12px;color:var(--color-neutral-700)">${due.label}</span>`:''}
+            ${due?`<span class="${due.cls}">Follow up</span><input type="date" class="input" style="width:auto;padding:2px 6px;font-size:12px" value="${esc(e.followDate)}" onchange="updateFollowDate('${e.id}',this.value)"><span style="font-size:12px;color:var(--color-neutral-700)">${due.label}</span>`:''}
             ${e.followDone && e.closedOn?`<span class="tag tag-neutral">Closed ${esc(e.closedOn)}</span>`:''}
           </div>
           <p style="margin:6px 0 0;font-size:14px;line-height:1.5">${esc(e.text)}</p>
@@ -1161,7 +1162,7 @@ function logSectionHTML(type, rec){
 function editFieldsFor(type){
   if(type==='leads') return [
     {k:'name',label:'Name',kind:'text'}, {k:'side',label:'Side',kind:'select',opts:['Customer','Provider']},
-    {k:'interest',label:'Interest',kind:'select',opts:APIS},
+    {k:'website',label:'Website',kind:'text'}, {k:'interest',label:'Interest',kind:'select',opts:APIS},
     {k:'stage',label:'Stage',kind:'select',opts:STAGES}, {k:'owner',label:'Account manager',kind:'select',opts:TEAM},
     {k:'next',label:'Next step',kind:'text'}, {k:'source',label:'Source',kind:'text'}, {k:'value',label:'Value (USD)',kind:'number'}
   ];
@@ -1493,7 +1494,7 @@ window.saveNew = async function(){
   try {
     const base = {owner:curAuthorName(), contacts:[], createdAt:new Date().toISOString()};
     let data;
-    if(type==='leads') data = {...base, name:S.newForm.name||'Untitled lead', side:S.newForm.side||'Customer', countries:[S.newForm.country].filter(Boolean), interest:S.newForm.interest||APIS[0], stage:'New', next:'', source:'', value:0};
+    if(type==='leads') data = {...base, name:S.newForm.name||'Untitled lead', side:S.newForm.side||'Customer', website:'', countries:[S.newForm.country].filter(Boolean), interest:S.newForm.interest||APIS[0], stage:'New', next:'', source:'', value:0};
     else if(type==='customers') data = {...base, name:S.newForm.name||'Untitled customer', countries:[S.newForm.country].filter(Boolean), industry:S.newForm.industry||'', website:'', status:'Prospect', apis:[], arr:0};
     else if(type==='providers') data = {...base, name:S.newForm.name||'Untitled provider', country:S.newForm.country||'', kind:S.newForm.kind||PROVIDER_KINDS[0], network:'', users:0, status:'Prospect', coverage:[], apis:APIS.map(()=>0)};
     else if(type==='partners') data = {...base, name:S.newForm.name||'Untitled partner', kicker:S.newForm.kicker||PARTNER_KICKERS[0], website:'', body:S.newForm.body||'', status:'Prospect', share:'', joint:0, since:'', intros:[]};
@@ -1750,6 +1751,59 @@ window.deleteRecord = async function(){
     alert('Could not delete. Error: ' + (e && e.message || e));
   }
 };
+// Recreates a record's relationship log under a different record, preserving
+// thread structure (parentId links get remapped to the new copies' ids,
+// since old ids don't exist in the new context) and original timestamps/
+// authorship. Used by convertLead so a lead's history survives conversion.
+async function copyLogEntries(oldType, oldId, newType, newId){
+  const entries = entriesFor(oldType, oldId);
+  const idMap = {};
+  async function copyNode(e){
+    const newEntryId = await dbAdd('logEntries', {
+      recordType: newType, recordId: newId,
+      parentId: e.parentId ? (idMap[e.parentId]||null) : null,
+      kind: e.kind, author: e.author, initials: e.initials||initials(e.author),
+      text: e.text, follow: !!e.follow, followDate: e.followDate||null,
+      followDone: !!e.followDone, closedOn: e.closedOn||null,
+      createdAt: e.createdAt||new Date().toISOString()
+    });
+    idMap[e.id] = newEntryId;
+    const children = entries.filter(c=>c.parentId===e.id).sort((a,b)=>(a.createdAt||'').localeCompare(b.createdAt||''));
+    for(const c of children) await copyNode(c);
+  }
+  const roots = entries.filter(e=>!e.parentId).sort((a,b)=>(a.createdAt||'').localeCompare(b.createdAt||''));
+  for(const r of roots) await copyNode(r);
+}
+window.convertLead = async function(){
+  const {type,id} = S.selected;
+  const lead = recordOf('leads', id);
+  if(!lead || type!=='leads') return;
+  const targetType = lead.side==='Provider' ? 'providers' : 'customers';
+  const targetLabel = TYPE_LABEL[targetType];
+  if(!confirm(`Convert "${lead.name}" to a ${targetLabel}? This creates a new ${targetLabel} record with this lead's contacts, documents and relationship log, then removes the lead. This cannot be undone.`)) return;
+  try {
+    const base = {
+      name: lead.name, owner: lead.owner,
+      contacts: lead.contacts||[], documents: lead.documents||[],
+      createdAt: new Date().toISOString()
+    };
+    let data;
+    if(targetType==='customers'){
+      data = {...base, website: lead.website||'', countries: lead.countries||[], industry:'', status:'Onboarding', apis: lead.interest?[lead.interest]:[], arr: Number(lead.value)||0};
+    } else {
+      data = {...base, country: (lead.countries||[])[0]||'', kind: PROVIDER_KINDS[0], network:'', users:0, status:'Testing', coverage:[], apis: APIS.map(()=>0)};
+    }
+    const newId = await dbAdd(targetType, data);
+    await copyLogEntries('leads', id, targetType, newId);
+    const oldEntries = entriesFor('leads', id);
+    for(const e of oldEntries){ await dbDelete('logEntries', e.id); }
+    await dbDelete('leads', id);
+    window.openRecord(targetType, newId);
+  } catch(e) {
+    console.error('convertLead failed:', e);
+    alert('Could not convert this lead. Error: ' + (e && e.message || e));
+  }
+};
 window.reassignAM = async function(newOwner){
   const {type,id} = S.selected;
   const rec = recordOf(type,id);
@@ -1797,6 +1851,15 @@ window.markDone = async function(type,id,entryId){
   } catch(e) {
     console.error('markDone failed:', e);
     alert('Could not mark as done. Error: ' + (e && e.message || e));
+  }
+};
+window.updateFollowDate = async function(entryId, newDate){
+  try {
+    await dbUpdate('logEntries', entryId, {followDate: newDate});
+    render();
+  } catch(e) {
+    console.error('updateFollowDate failed:', e);
+    alert('Could not reschedule. Error: ' + (e && e.message || e));
   }
 };
 window.startReply = function(entryId){ S.replyTo=entryId; S.replyText=''; S.replyKind='Note'; S.replyFollow=true; S.replyDate=addDays(14); render(); };
