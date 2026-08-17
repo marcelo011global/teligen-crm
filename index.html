@@ -722,6 +722,13 @@ function fmtBytes(n){
   if(n < 1024*1024) return (n/1024).toFixed(1)+' KB';
   return (n/(1024*1024)).toFixed(1)+' MB';
 }
+// Fallback material name when nothing was typed for a pasted link -- the
+// bare hostname ("canva.com") reads far better as a card title than the
+// full URL with its path, which is what used to show up untruncated.
+function hostnameOf(url){
+  if(!url) return '';
+  try { return new URL(url).hostname.replace(/^www\./,''); } catch(e){ return ''; }
+}
 function computeMaterialsRows(){
   let rows = DATA.materials.filter(m=>ownerOk(m.owner));
   rows = rows.filter(m=>{
@@ -762,9 +769,9 @@ function materialCardHTML(m){
   <div style="display:grid;grid-template-columns:54px 1fr;gap:var(--space-3);padding:var(--space-4) var(--space-3);border-bottom:1px solid var(--color-divider);border-right:1px solid var(--color-divider)">
     <div style="width:54px;height:54px;flex:none;background:var(--color-text);color:var(--color-bg);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;letter-spacing:0.04em">${esc(m.format||'FILE')}</div>
     <div style="min-width:0">
-      <div style="display:flex;flex-wrap:wrap;align-items:center;gap:6px">
-        <strong style="font-size:15px;letter-spacing:-0.01em">${esc(m.name)}</strong>
-        ${fresh?`<span class="tag tag-accent">Recently updated</span>`:''}
+      <div style="display:flex;align-items:center;gap:6px">
+        <strong style="font-size:15px;letter-spacing:-0.01em;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(m.name)}">${esc(m.name)}</strong>
+        ${fresh?`<span class="tag tag-accent" style="flex:none">Recently updated</span>`:''}
       </div>
       <div style="display:flex;flex-wrap:wrap;align-items:center;gap:var(--space-2);font-size:12px;color:var(--color-neutral-700);margin-top:4px">
         <span class="tag ${m.lang==='English'?'tag-neutral':'tag-outline'}">${esc(m.lang||'Any')}</span>
@@ -1547,7 +1554,7 @@ window.addMaterial = async function(){
       format = ext;
     }
     const data = {
-      name: finalName || url,
+      name: finalName || hostnameOf(url) || url,
       cat: S.matForm.cat || MATERIAL_CATEGORIES[0],
       kind: '',
       format,
