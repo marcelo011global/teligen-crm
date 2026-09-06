@@ -34,7 +34,7 @@ shape, so every view/interaction is testable with zero setup. Nothing else in
 the file needs to change when a real project is wired in.
 
 ## Firestore Collections
-- `leads` — {name, side (Customer|Provider), website, countries[], interest (API name), stage, owner, next, value, source, contacts[], documents[{id,category,name,url,path,uploadedBy,uploadedAt}], createdAt}
+- `leads` — {name, side (Customer|Provider), website, countries[], interests[] (API names — multi-select, own editor section like Countries), stage, owner, next, value, source (LEAD_SOURCES — fixed list, not free text), contacts[], documents[{id,category,name,url,path,uploadedBy,uploadedAt}], createdAt}
 - `customers` — {name, industry, website, countries[], status, owner, apis[], arr, contacts[], documents[{id,category,name,url,path,uploadedBy,uploadedAt}], createdAt}
 - `providers` — {name, kind (Mobile Operator|Wholesale), country, network, users, status, owner, coverage[{country,operator,apiFlags[N]}], apis[N] (derived — never edited directly, recomputed from coverage on save), contacts[], documents[{id,category,name,url,path,uploadedBy,uploadedAt}], createdAt}
 - `partners` — {name, kicker (Aggregator|Alliance|Technology|Reseller), website, status, owner, share, joint, since, body, intros[{name,side,country,industry,stage,note}], contacts[], documents[{id,category,name,url,path,uploadedBy,uploadedAt}], createdAt}
@@ -111,6 +111,12 @@ single `country` string instead (one home market, not a market list).
 `recordCountryLabel(type, rec)` is the one place that reads either shape —
 use it for any cross-type display rather than reaching for `.country`
 directly on a lead.
+
+A lead's **interests** (which of the tracked APIs it's after) is the same
+pattern, one level simpler: `interests: string[]` with its own editor
+section (`interestsEditorHTML()`, `toggleEditInterest()`), checkboxes over
+`APIS` rather than a fixed list of its own. On conversion to a Customer,
+`interests` seeds that customer's `apis` (in use) directly.
 
 ## Team and tracked APIs
 Both editable from the **Settings** page (link at the bottom of the sidebar)
