@@ -1,0 +1,16 @@
+{
+  "name": "teligen-crm-functions",
+  "description": "Cloud Functions for the Teligen CRM — Instantly.ai integration",
+  "private": true,
+  "engines": {
+    "node": "20"
+  },
+  "main": "index.js",
+  "scripts": {
+    "logs": "firebase functions:log"
+  },
+  "dependencies": {
+    "firebase-admin": "^12.7.0",
+    "firebase-functions": "^6.3.1"
+  }
+}

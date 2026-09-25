@@ -57,6 +57,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/fireba
 import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut as fbSignOut } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 import { getFirestore, collection, addDoc, updateDoc, deleteDoc, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js";
+import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-functions.js";
 
 // ── Firebase config ─────────────────────────────────────────────────────────
 // TODO: replace with the Teligen CRM's own Firebase project (see README.md).
@@ -74,12 +75,26 @@ const firebaseConfig = {
 const DEMO_MODE = firebaseConfig.apiKey === "REPLACE_ME";
 const ALLOWED_DOMAINS = ['@011global.com','@011telecom.com'];
 
-let auth = null, db = null, storage = null;
+let auth = null, db = null, storage = null, functionsClient = null;
 if (!DEMO_MODE) {
   const app = initializeApp(firebaseConfig);
   auth = getAuth(app);
   db = getFirestore(app);
   storage = getStorage(app);
+  functionsClient = getFunctions(app);
+}
+// Instantly.ai integration lives entirely in Cloud Functions (functions/index.js) —
+// the API key never touches the client. In DEMO_MODE there's no backend to call,
+// so these are mocked to keep the UI testable locally.
+async function callInstantlyFn(name, data){
+  if (DEMO_MODE) {
+    if (name === 'listInstantlyCampaigns') return {campaigns: [{id:'demo-campaign-1', name:'Teligen — Q4 Cold Outreach', status:1}]};
+    if (name === 'uploadProspectsToInstantly') return {uploaded: (data.prospectIds||[]).length, skipped: []};
+    return {};
+  }
+  const fn = httpsCallable(functionsClient, name);
+  const res = await fn(data);
+  return res.data;
 }
 
 // ── Tiny data layer — same call shape whether backed by Firestore or, in
@@ -226,7 +241,9 @@ const S = {
   contactsOpen: false, documentsOpen: false, // collapsed by default on the record page; reset per-record in openRecord()
   statusFilter: [...PROVIDER_STATUSES], // which provider statuses show on Providers + API coverage -- all on by default
   matForm: {name:'', url:'', cat:MATERIAL_CATEGORIES[0], lang:'English', note:''},
-  matEditingId: null, matEditNote: '' // which material's description is being edited inline, if any
+  matEditingId: null, matEditNote: '', // which material's description is being edited inline, if any
+  showInstantlySync: false, instantlySyncLoading: false, instantlySyncError: '',
+  instantlySyncCampaigns: null, instantlySyncSelected: '' // campaigns list is cached for the session once loaded
 };
 
 // ── Helpers ──────────────────────────────────────────────────────────────
@@ -395,6 +412,7 @@ function shellHTML(){
   </div>
   ${S.showEdit ? editModalHTML() : ''}
   ${S.showNew ? newModalHTML() : ''}
+  ${S.showInstantlySync ? instantlySyncModalHTML() : ''}
   `;
 }
 function sidebarHTML(){
@@ -1005,6 +1023,7 @@ function recordPageHTML(){
         </div>
         <div style="display:flex;gap:var(--space-2);align-items:center">
           <button class="btn btn-ghost" onclick="deleteRecord()" style="color:var(--color-neutral-700)">Delete</button>
+          ${type==='prospects' ? `<button class="btn btn-secondary" onclick="openInstantlySync()">Sync to Instantly</button>` : ''}
           ${type==='prospects' ? `<button class="btn btn-secondary" onclick="convertProspect()">Convert to Lead</button>` : ''}
           ${type==='leads' ? `<button class="btn btn-secondary" onclick="convertLead()">Convert to ${esc(TYPE_LABEL[rec.side==='Provider'?'providers':'customers'])}</button>` : ''}
           <button class="btn btn-secondary" onclick="focusComposer()">Log activity</button>
@@ -1436,6 +1455,45 @@ function newModalHTML(){
   </div>`;
 }
 
+// Uploads the currently open Prospect to Instantly.ai for an intro-email
+// campaign. Only campaigns whose name contains "Teligen" are ever listed --
+// the Instantly workspace also holds unrelated companies' campaigns
+// (listInstantlyCampaigns in functions/index.js filters those out server-side).
+function instantlySyncModalHTML(){
+  const {type,id} = S.selected;
+  const rec = recordOf(type,id);
+  const contact = rec && (rec.contacts||[])[0];
+  return `
+  <div style="position:fixed;inset:0;background:color-mix(in srgb,#201e1d 45%,transparent);display:flex;align-items:center;justify-content:center;padding:var(--space-4)" onclick="closeInstantlySync()">
+    <section onclick="event.stopPropagation()" class="elev-lg" style="width:480px;max-width:100%;background:var(--color-bg);border:2px solid var(--color-divider)">
+      <header style="display:flex;align-items:center;gap:var(--space-4);padding:var(--space-4) var(--space-6);border-bottom:2px solid var(--color-divider)">
+        <h3 style="margin:0;font-size:22px;letter-spacing:-0.01em;flex:1">Sync to Instantly</h3>
+        <button class="btn btn-secondary" onclick="closeInstantlySync()">Cancel</button>
+      </header>
+      <div style="padding:var(--space-6);display:grid;gap:var(--space-4)">
+        ${!contact || !contact.email ? `
+          <p style="font-size:13px;color:var(--color-neutral-700)">${esc(rec ? rec.name : '')} has no contact email yet. Add one under Contacts before syncing to Instantly.</p>
+        ` : S.instantlySyncLoading ? `
+          <p style="font-size:13px;color:var(--color-neutral-700)">Loading Teligen campaigns from Instantly…</p>
+        ` : S.instantlySyncError ? `
+          <p style="font-size:13px;color:var(--color-danger,#b3261e)">${esc(S.instantlySyncError)}</p>
+        ` : !S.instantlySyncCampaigns || !S.instantlySyncCampaigns.length ? `
+          <p style="font-size:13px;color:var(--color-neutral-700)">No Teligen campaigns found in Instantly. Create one there first.</p>
+        ` : `
+          <p style="font-size:13px;color:var(--color-neutral-700)">Uploads ${esc(contact.email)} (${esc(rec.name)}) as a lead in the campaign below.</p>
+          <div class="field">
+            <label>Instantly campaign</label>
+            <select class="input" onchange="S.instantlySyncSelected=this.value">
+              ${S.instantlySyncCampaigns.map(c=>`<option value="${esc(c.id)}" ${S.instantlySyncSelected===c.id?'selected':''}>${esc(c.name)}</option>`).join('')}
+            </select>
+          </div>
+          <button class="btn btn-primary btn-block" onclick="confirmInstantlySync()">Upload to Instantly</button>
+        `}
+      </div>
+    </section>
+  </div>`;
+}
+
 // ── Settings ─────────────────────────────────────────────────────────────
 // Tracked APIs and the team roster used to be hardcoded constants requiring
 // a code change + redeploy. They're editable here instead, stored in one
@@ -1576,6 +1634,35 @@ window.saveEdit = async function(){
 
 window.openNew = function(type){ S.newForm = {__type:type}; S.showNew = true; render(); };
 window.closeNew = function(){ S.showNew=false; render(); };
+
+window.openInstantlySync = async function(){
+  S.showInstantlySync = true; S.instantlySyncError = ''; render();
+  if (S.instantlySyncCampaigns) return; // cached for the session -- avoid re-fetching per click
+  S.instantlySyncLoading = true; render();
+  try {
+    const {campaigns} = await callInstantlyFn('listInstantlyCampaigns', {});
+    S.instantlySyncCampaigns = campaigns || [];
+    S.instantlySyncSelected = S.instantlySyncCampaigns[0] ? S.instantlySyncCampaigns[0].id : '';
+  } catch (e) {
+    console.error('listInstantlyCampaigns failed:', e);
+    S.instantlySyncError = 'Could not load campaigns from Instantly. Error: ' + (e && e.message || e);
+  }
+  S.instantlySyncLoading = false; render();
+};
+window.closeInstantlySync = function(){ S.showInstantlySync = false; S.instantlySyncError = ''; render(); };
+window.confirmInstantlySync = async function(){
+  const {type,id} = S.selected;
+  if (!S.instantlySyncSelected) return;
+  try {
+    const res = await callInstantlyFn('uploadProspectsToInstantly', {prospectIds:[id], campaignId:S.instantlySyncSelected});
+    S.showInstantlySync = false; render();
+    if (res.uploaded) alert('Uploaded to Instantly.');
+    else alert('Not uploaded — ' + ((res.skipped||[])[0]?.reason || 'no contact email on file'));
+  } catch (e) {
+    console.error('uploadProspectsToInstantly failed:', e);
+    alert('Could not upload to Instantly. Error: ' + (e && e.message || e));
+  }
+};
 window.newFieldChange = function(k,v){ S.newForm[k]=v; };
 window.saveNew = async function(){
   const type = S.newForm.__type;

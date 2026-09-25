@@ -34,7 +34,7 @@ shape, so every view/interaction is testable with zero setup. Nothing else in
 the file needs to change when a real project is wired in.
 
 ## Firestore Collections
-- `prospects` — {name, side (Customer|Provider), website, countries[], source (LEAD_SOURCES), owner, contacts[], documents[...], instantlyStatus (''|'Queued'|'Synced' — set by the Instantly integration, not yet wired), createdAt}. Cold, not-yet-qualified contacts sourced for outbound campaigns (uploaded to Instantly for intro emails) — deliberately lighter than Leads (no stage/interests/value, those are pipeline concepts that apply once qualified). "Convert to Lead" (`convertProspect()`) promotes one, identical pattern to `convertLead()`.
+- `prospects` — {name, side (Customer|Provider), website, countries[], source (LEAD_SOURCES), owner, contacts[], documents[...], instantlyStatus (''|'Synced' — set by `uploadProspectsToInstantly`), instantlySyncedAt, createdAt}. Cold, not-yet-qualified contacts sourced for outbound campaigns (uploaded to Instantly for intro emails) — deliberately lighter than Leads (no stage/interests/value, those are pipeline concepts that apply once qualified). "Convert to Lead" (`convertProspect()`) promotes one, identical pattern to `convertLead()`. See "Instantly integration" below.
 - `leads` — {name, side (Customer|Provider), website, countries[], interests[] (API names — multi-select, own editor section like Countries), stage, owner, next, value, source (LEAD_SOURCES — fixed list, not free text), contacts[], documents[{id,category,name,url,path,uploadedBy,uploadedAt}], createdAt}
 - `customers` — {name, industry, website, countries[], status, owner, apis[], arr, contacts[], documents[{id,category,name,url,path,uploadedBy,uploadedAt}], createdAt}
 - `providers` — {name, kind (Mobile Operator|Wholesale), country, network, users, status, owner, coverage[{country,operator,apiFlags[N]}], apis[N] (derived — never edited directly, recomputed from coverage on save), contacts[], documents[{id,category,name,url,path,uploadedBy,uploadedAt}], createdAt}
@@ -142,23 +142,49 @@ lineup changes — no code deploy needed for either.
 10. **Edit modal** — per-type fields, plus a coverage editor (a status dropdown per API per market row — see `MARKET_STATUSES`) for providers, intros editor for partners, contacts editor for all types.
 11. **Settings** — separate from the main views (sidebar footer link, not in `NAV`) — edits `settings/config` (see above).
 
-## Instantly integration (in progress)
-Goal: upload Prospects to Instantly for intro-email campaigns, and import all
-email communication to/from `michael@teligenlabs.com` back into the matching
-prospect's relationship log (as `kind:'Email'` entries).
-- **Architecture decision**: Firebase Cloud Functions, not client-side calls.
-  Instantly's own docs explicitly warn their API key must never be exposed
-  client-side or committed to version control — this app is a public static
-  site (GitHub Pages), so the key can only ever live server-side, as a
-  Functions secret. The client calls narrow, Auth-gated callable functions;
-  it never talks to Instantly directly.
-- **Instantly API v2** (`https://api.instantly.ai/api/v2`, bearer token auth):
-  `POST /leads/bulk` for the prospect upload; `GET /emails?eaccount=...&lead=...`
-  for communication history (cursor-paginated via `starting_after`); webhooks
-  available for real-time reply notifications as an alternative to polling.
-- **Not yet built**: the `functions/` directory, the secret, and the actual
-  upload/sync functions. `instantlyStatus` on `prospects` is a placeholder
-  field for this — reads '' until that's wired up.
+## Instantly integration (live)
+Uploads Prospects to Instantly for intro-email campaigns, and imports all email
+communication to/from `michael@teligenlabs.com` back into the matching
+Prospect's (or Lead's, post-conversion) relationship log as `kind:'Email'`
+entries. Deployed to the `teligen-crm` Firebase project, region `us-central1`.
+- **Architecture**: Firebase Cloud Functions (`functions/index.js`), not
+  client-side calls. Instantly's own docs explicitly warn their API key must
+  never be exposed client-side or committed to version control — this app is
+  a public static site (GitHub Pages), so the key lives only server-side, as
+  the `INSTANTLY_API_KEY` Cloud Functions secret (`firebase functions:secrets:set`).
+  The client calls narrow, Auth-gated (`@011global.com`/`@011telecom.com` only)
+  callable functions via `callInstantlyFn()` in `index.html`; it never talks
+  to Instantly directly.
+- **`listInstantlyCampaigns`** (callable) — `GET /campaigns?search=Teligen`,
+  further filtered server-side to names matching `/teligen/i`. The Instantly
+  workspace has campaigns for other companies too, so this is the only list
+  ever surfaced to the CRM. Backs the campaign picker in the "Sync to
+  Instantly" modal on a Prospect's record page.
+- **`uploadProspectsToInstantly`** (callable) — `POST /leads/add` with a
+  `campaign_id` (or `list_id`) and the given prospects' first contact as the
+  lead (email/name/company/website). Sets `instantlyStatus: 'Synced'` +
+  `instantlySyncedAt` on each uploaded prospect. Triggered from the "Sync to
+  Instantly" button on a Prospect's record page (`openInstantlySync()` /
+  `confirmInstantlySync()` in `index.html`); currently uploads one prospect
+  at a time (whichever record is open), not a bulk multi-select.
+- **`syncInstantlyEmails`** (scheduled, every 30 min) — polls
+  `GET /emails?eaccount=michael@teligenlabs.com&min_timestamp_created=...`
+  since the last run (cursor kept in `settings/instantlySync`), matches each
+  email's from/to address against every Prospect's and Lead's first contact
+  email (loaded fresh into memory each run — fine at this scale, no separate
+  index), and writes a `logEntries` doc (`kind:'Email'`) on the first match.
+  Dedupes via `instantlyId` on the log entry, so overlapping timestamp windows
+  across runs never double-log. Capped at 20 pages (2000 emails) per run;
+  a very large backfill on first run continues across subsequent runs since
+  the cursor only advances by what was actually processed.
+- **Local tooling note**: this machine's global npm cache is broken and the
+  global install path needs sudo, so there's no bare `firebase` command —
+  every Firebase CLI call goes through
+  `npm_config_cache=/tmp/npm-cache-fix npx --yes firebase-tools@latest <command>`.
+- **Not yet built**: a bulk "sync selected prospects" action from the
+  Prospects list view (today it's per-record only) and a `listId` alternative
+  in the sync modal (only `campaignId` is wired up client-side, though the
+  function supports either).
 
 ## Materials library
 A standalone `materials` collection — not attached to any lead/customer/
