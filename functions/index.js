@@ -49,10 +49,7 @@ async function instantlyFetch(path, apiKey, options) {
 
 // Returns only the Instantly campaigns relevant to Teligen (name contains "teligen"),
 // so the CRM never lists other companies' campaigns from the same Instantly workspace.
-exports.listInstantlyCampaigns = onCall({secrets: [INSTANTLY_API_KEY]}, async (request) => {
-  assertAuthorized(request);
-  const apiKey = INSTANTLY_API_KEY.value();
-
+async function getTeligenCampaigns(apiKey) {
   const matches = [];
   let startingAfter;
   let pages = 0;
@@ -72,7 +69,13 @@ exports.listInstantlyCampaigns = onCall({secrets: [INSTANTLY_API_KEY]}, async (r
     pages++;
   } while (startingAfter && pages < MAX_PAGES);
 
-  return {campaigns: matches};
+  return matches;
+}
+
+exports.listInstantlyCampaigns = onCall({secrets: [INSTANTLY_API_KEY]}, async (request) => {
+  assertAuthorized(request);
+  const campaigns = await getTeligenCampaigns(INSTANTLY_API_KEY.value());
+  return {campaigns};
 });
 
 exports.uploadProspectsToInstantly = onCall({secrets: [INSTANTLY_API_KEY]}, async (request) => {
@@ -142,6 +145,19 @@ function addContactsToMap(map, type, snap) {
   }
 }
 
+// Every record type that can carry a contact email — used both to match inbound
+// mail to an existing record, and to avoid re-creating a Prospect for a contact
+// that's already a Lead/Customer/Provider/Partner elsewhere in the CRM.
+const RECORD_TYPES_WITH_CONTACTS = ['prospects', 'leads', 'customers', 'providers', 'partners'];
+async function buildEmailIndex() {
+  const snaps = await Promise.all(RECORD_TYPES_WITH_CONTACTS.map(t => db.collection(t).get()));
+  const byEmail = new Map();
+  RECORD_TYPES_WITH_CONTACTS.forEach((type, i) => {
+    for (const snap of snaps[i].docs) addContactsToMap(byEmail, type, snap);
+  });
+  return byEmail;
+}
+
 function matchEmailToRecord(email, byEmail) {
   const candidates = [];
   if (email.from_address_email) candidates.push(email.from_address_email);
@@ -192,13 +208,7 @@ exports.syncInstantlyEmails = onSchedule(
     const cursorSnap = await cursorRef.get();
     const lastTimestamp = (cursorSnap.exists && cursorSnap.data().lastTimestamp) || '2020-01-01T00:00:00.000Z';
 
-    const [prospectsSnap, leadsSnap] = await Promise.all([
-      db.collection('prospects').get(),
-      db.collection('leads').get(),
-    ]);
-    const byEmail = new Map();
-    for (const snap of prospectsSnap.docs) addContactsToMap(byEmail, 'prospects', snap);
-    for (const snap of leadsSnap.docs) addContactsToMap(byEmail, 'leads', snap);
+    const byEmail = await buildEmailIndex();
 
     let startingAfter;
     let processed = 0;
@@ -241,5 +251,72 @@ exports.syncInstantlyEmails = onSchedule(
       lastProcessedCount: processed,
     }, {merge: true});
     console.log(`syncInstantlyEmails: processed ${processed} emails, cursor now ${maxTimestamp}`);
+  }
+);
+
+// Polls every Teligen campaign in Instantly and creates a Prospect here for any
+// lead whose email isn't already attached to a record in the CRM (Prospect, Lead,
+// Customer, Provider or Partner). Keeps the CRM as a mirror of who's being
+// worked in Instantly, not just the leads we ourselves uploaded from here.
+exports.syncInstantlyLeadsToProspects = onSchedule(
+  {schedule: 'every 30 minutes', secrets: [INSTANTLY_API_KEY], timeoutSeconds: 300},
+  async () => {
+    const apiKey = INSTANTLY_API_KEY.value();
+    const campaigns = await getTeligenCampaigns(apiKey);
+    if (!campaigns.length) {
+      console.log('syncInstantlyLeadsToProspects: no Teligen campaigns found');
+      return;
+    }
+
+    const byEmail = await buildEmailIndex();
+    let created = 0;
+    const MAX_PAGES = 20;
+
+    for (const campaign of campaigns) {
+      let startingAfter;
+      let pages = 0;
+      do {
+        let data;
+        try {
+          data = await instantlyFetch('/leads/list', apiKey, {
+            method: 'POST',
+            body: JSON.stringify({campaign: campaign.id, limit: 100, starting_after: startingAfter}),
+          });
+        } catch (e) {
+          console.error(`syncInstantlyLeadsToProspects: leads/list failed for campaign ${campaign.name}`, e);
+          break;
+        }
+        const items = data.items || [];
+        for (const lead of items) {
+          const email = (lead.email || '').toLowerCase();
+          if (!email || byEmail.has(email)) continue;
+
+          const contactName = [lead.first_name, lead.last_name].filter(Boolean).join(' ') || email;
+          const name = lead.company_name || contactName;
+          const now = new Date().toISOString();
+          const ref = await db.collection('prospects').add({
+            name,
+            side: 'Customer',
+            owner: 'Unassigned',
+            website: lead.website || '',
+            countries: [],
+            source: 'Cold outreach',
+            contacts: [{name: contactName, role: '', kind: 'Primary', email: lead.email, phone: ''}],
+            documents: [],
+            instantlyStatus: 'Synced',
+            instantlySyncedAt: now,
+            instantlyLeadId: lead.id,
+            instantlyCampaign: campaign.name,
+            createdAt: now,
+          });
+          byEmail.set(email, {type: 'prospects', id: ref.id});
+          created++;
+        }
+        startingAfter = data.next_starting_after;
+        pages++;
+      } while (startingAfter && pages < MAX_PAGES);
+    }
+
+    console.log(`syncInstantlyLeadsToProspects: created ${created} new prospect(s) from ${campaigns.length} Teligen campaign(s)`);
   }
 );

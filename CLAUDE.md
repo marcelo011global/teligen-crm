@@ -170,13 +170,27 @@ entries. Deployed to the `teligen-crm` Firebase project, region `us-central1`.
 - **`syncInstantlyEmails`** (scheduled, every 30 min) — polls
   `GET /emails?eaccount=michael@teligenlabs.com&min_timestamp_created=...`
   since the last run (cursor kept in `settings/instantlySync`), matches each
-  email's from/to address against every Prospect's and Lead's first contact
-  email (loaded fresh into memory each run — fine at this scale, no separate
-  index), and writes a `logEntries` doc (`kind:'Email'`) on the first match.
-  Dedupes via `instantlyId` on the log entry, so overlapping timestamp windows
-  across runs never double-log. Capped at 20 pages (2000 emails) per run;
-  a very large backfill on first run continues across subsequent runs since
-  the cursor only advances by what was actually processed.
+  email's from/to address against every existing record's first contact email
+  (Prospects, Leads, Customers, Providers, Partners — `buildEmailIndex()`,
+  loaded fresh into memory each run, fine at this scale), and writes a
+  `logEntries` doc (`kind:'Email'`) on the first match. Dedupes via
+  `instantlyId` on the log entry, so overlapping timestamp windows across
+  runs never double-log. Capped at 20 pages (2000 emails) per run; a very
+  large backfill on first run continues across subsequent runs since the
+  cursor only advances by what was actually processed. It does **not**
+  create new records for an unmatched address — see the next function for
+  that direction.
+- **`syncInstantlyLeadsToProspects`** (scheduled, every 30 min) — the reverse
+  direction: for every Teligen campaign (`getTeligenCampaigns()`, shared with
+  `listInstantlyCampaigns`), pages through `POST /leads/list` and creates a
+  new `prospects` doc for any lead email not already in `buildEmailIndex()`
+  (Customer side by default, source `'Cold outreach'`, owner `'Unassigned'`,
+  `instantlyStatus:'Synced'`, `instantlyLeadId` + `instantlyCampaign` kept for
+  reference). So a lead created directly in Instantly — not uploaded from
+  here — shows up as a Prospect in the CRM within 30 min, no manual step.
+  No time-based cursor (the list-leads endpoint has none to filter by), so
+  every run re-scans full campaigns; cost is one dedupe-map lookup per lead,
+  capped at 20 pages (2000 leads) per campaign per run.
 - **Local tooling note**: this machine's global npm cache is broken and the
   global install path needs sudo, so there's no bare `firebase` command —
   every Firebase CLI call goes through
