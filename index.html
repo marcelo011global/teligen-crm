@@ -243,7 +243,8 @@ const S = {
   matForm: {name:'', url:'', cat:MATERIAL_CATEGORIES[0], lang:'English', note:''},
   matEditingId: null, matEditNote: '', // which material's description is being edited inline, if any
   showInstantlySync: false, instantlySyncLoading: false, instantlySyncError: '',
-  instantlySyncCampaigns: null, instantlySyncSelected: '' // campaigns list is cached for the session once loaded
+  instantlySyncCampaigns: null, instantlySyncSelected: '', // campaigns list is cached for the session once loaded
+  todayProspectsOpen: false // collapsed by default -- Instantly auto-creates prospects with no log yet, so this list can get long
 };
 
 // ── Helpers ──────────────────────────────────────────────────────────────
@@ -515,7 +516,12 @@ function viewRows(){
 
 // ── Today ──────────────────────────────────────────────────────────────
 function todayHTML(){
+  // Prospects are kept out of the main feed below and rolled into their own
+  // collapsed group at the bottom -- Instantly can create/touch many of them
+  // in a single sync run, which used to flood this page with individual rows.
   const follows = allOpenFollowUps();
+  const followsProspects = follows.filter(f=>f.type==='prospects');
+  const followsOthers = follows.filter(f=>f.type!=='prospects');
   const overdue = follows.filter(f=>dueInfo(f.followDate).label.startsWith('Overdue')).length;
   const dueWeek = follows.filter(f=>{const l=dueInfo(f.followDate).label; return l==='Due today'||l==='Due tomorrow'||l.startsWith('Due in');}).length;
   const openPipe = DATA.leads.filter(l=>ownerOk(l.owner)).reduce((n,l)=>n+(Number(l.value)||0),0);
@@ -525,6 +531,9 @@ function todayHTML(){
     ...DATA.providers.map(r=>({...r,type:'providers'})), ...DATA.partners.map(r=>({...r,type:'partners'}))
   ].filter(r=>ownerOk(r.owner));
   const silent = allRecs.filter(r=>!hasAnyLog(r.type,r.id));
+  const silentProspects = silent.filter(r=>r.type==='prospects');
+  const silentOthers = silent.filter(r=>r.type!=='prospects');
+  const prospectUpdates = followsProspects.length + silentProspects.length;
 
   const stats = [
     {k:'Follow-ups open', v:follows.length, sub:overdue+' overdue'},
@@ -548,9 +557,9 @@ function todayHTML(){
         <h2 style="margin:0;font-size:24px;letter-spacing:-0.01em">Pending follow-ups</h2>
         <span style="font-size:12px;color:var(--color-neutral-700)">earliest first</span>
       </div>
-      ${!follows.length ? `<div style="padding:var(--space-4) 0;font-size:14px;color:var(--color-neutral-700)">Nothing pending. Flag a log entry as needing follow-up and it appears here.</div>` : ''}
+      ${!followsOthers.length ? `<div style="padding:var(--space-4) 0;font-size:14px;color:var(--color-neutral-700)">Nothing pending. Flag a log entry as needing follow-up and it appears here.</div>` : ''}
       <div style="display:grid;gap:0;margin-top:var(--space-3)">
-        ${follows.map(f=>{
+        ${followsOthers.map(f=>{
           const due=dueInfo(f.followDate);
           return `
           <div class="row-hit" onclick="openRecord('${f.type}','${f.rec.id}')" style="display:grid;grid-template-columns:168px minmax(0,1fr) auto;gap:var(--space-4);align-items:start;padding:var(--space-4) var(--space-3);border-top:1px solid var(--color-divider)">
@@ -580,13 +589,63 @@ function todayHTML(){
       <h2 style="margin:0;font-size:24px;letter-spacing:-0.01em">Accounts with no activity logged</h2>
       ${!silent.length ? `<div style="padding:var(--space-4) 0;font-size:14px;color:var(--color-neutral-700)">Every account in this book has at least one log entry.</div>` : ''}
       <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:0;margin-top:var(--space-3)">
-        ${silent.map(r=>`
+        ${silentOthers.map(r=>`
           <div class="row-hit" onclick="openRecord('${r.type}','${r.id}')" style="padding:var(--space-3);border-top:1px solid var(--color-divider)">
             <div style="font-weight:600;font-size:14px">${esc(r.name)}</div>
             <div style="font-size:12px;color:var(--color-neutral-700)">${TYPE_LABEL[r.type]} · ${esc(recordCountryLabel(r.type, r))}</div>
             <div style="font-size:12px;color:var(--color-neutral-700)">${esc(r.owner)}</div>
           </div>`).join('')}
       </div>
+    </section>
+    <section style="padding-top:var(--space-8)">
+      <div style="display:flex;align-items:baseline;gap:var(--space-2);cursor:pointer" onclick="toggleTodayProspects()">
+        <span style="font-size:12px;color:var(--color-neutral-700);width:12px">${S.todayProspectsOpen?'▾':'▸'}</span>
+        <h2 style="margin:0;font-size:24px;letter-spacing:-0.01em">Prospects</h2>
+        <span style="font-size:12px;color:var(--color-neutral-700)">${prospectUpdates} update${prospectUpdates===1?'':'s'} — ${followsProspects.length} follow-up${followsProspects.length===1?'':'s'}, ${silentProspects.length} with no activity yet</span>
+      </div>
+      ${S.todayProspectsOpen ? `
+      <div style="margin-top:var(--space-3)">
+        ${!followsProspects.length ? '' : `
+          <h3 style="margin:0 0 4px;font-size:13px;letter-spacing:0.08em;text-transform:uppercase;color:var(--color-neutral-700)">Follow-ups</h3>
+          <div style="display:grid;gap:0;margin-bottom:var(--space-4)">
+            ${followsProspects.map(f=>{
+              const due=dueInfo(f.followDate);
+              return `
+              <div class="row-hit" onclick="openRecord('${f.type}','${f.rec.id}')" style="display:grid;grid-template-columns:168px minmax(0,1fr) auto;gap:var(--space-4);align-items:start;padding:var(--space-4) var(--space-3);border-top:1px solid var(--color-divider)">
+                <div style="display:grid;gap:4px" onclick="event.stopPropagation()">
+                  <span class="${due.cls}">${due.label}</span>
+                  <input type="date" class="input" style="width:auto;padding:2px 6px;font-size:12px;font-variant-numeric:tabular-nums" value="${esc(f.followDate)}" onchange="updateFollowDate('${f.id}',this.value)">
+                </div>
+                <div style="min-width:0">
+                  <div style="display:flex;flex-wrap:wrap;align-items:center;gap:var(--space-2)">
+                    <strong style="font-size:15px">${esc(f.rec.name)}</strong>
+                    <span class="${logKindCls(f.kind)}">${esc(f.kind)}</span>
+                    <span style="font-size:12px;color:var(--color-neutral-700)">${esc(f.rec.owner)}</span>
+                  </div>
+                  <p style="margin:5px 0 0;font-size:14px;line-height:1.5">${esc(f.text)}</p>
+                  <div style="font-size:11px;color:var(--color-neutral-600);margin-top:4px">Logged by ${esc(f.author)} · ${relTime(f.createdAt)}</div>
+                </div>
+                <div style="display:grid;gap:4px;justify-items:stretch" onclick="event.stopPropagation()">
+                  <button class="btn btn-secondary" onclick="markDone('${f.type}','${f.rec.id}','${f.id}')">Mark done</button>
+                  <button class="btn btn-ghost" onclick="openRecord('${f.type}','${f.rec.id}','${f.id}')">Log outcome</button>
+                </div>
+              </div>`;
+            }).join('')}
+          </div>
+        `}
+        ${!silentProspects.length ? '' : `
+          <h3 style="margin:0 0 4px;font-size:13px;letter-spacing:0.08em;text-transform:uppercase;color:var(--color-neutral-700)">No activity yet</h3>
+          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:0">
+            ${silentProspects.map(r=>`
+              <div class="row-hit" onclick="openRecord('${r.type}','${r.id}')" style="padding:var(--space-3);border-top:1px solid var(--color-divider)">
+                <div style="font-weight:600;font-size:14px">${esc(r.name)}</div>
+                <div style="font-size:12px;color:var(--color-neutral-700)">${esc(r.side||'')}${r.instantlyCampaign?' · '+esc(r.instantlyCampaign):''}</div>
+                <div style="font-size:12px;color:var(--color-neutral-700)">${esc(r.owner)}</div>
+              </div>`).join('')}
+          </div>
+        `}
+        ${!prospectUpdates ? `<div style="padding:var(--space-4) 0;font-size:14px;color:var(--color-neutral-700)">No pending follow-ups or silent prospects right now.</div>` : ''}
+      </div>` : ''}
     </section>
   `;
 }
@@ -1571,6 +1630,7 @@ window.openRecord = function(type,id,jumpToEntryId){
 window.closeRecord = function(){ const t=S.selected?S.selected.type:S.view; S.selected=null; location.hash='#/'+t; render(); };
 window.toggleContactsOpen = function(){ S.contactsOpen = !S.contactsOpen; render(); };
 window.toggleDocumentsOpen = function(){ S.documentsOpen = !S.documentsOpen; render(); };
+window.toggleTodayProspects = function(){ S.todayProspectsOpen = !S.todayProspectsOpen; render(); };
 
 window.openEdit = function(focus){
   const {type,id} = S.selected;
