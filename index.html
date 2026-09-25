@@ -89,7 +89,7 @@ let demoStore = {};
 let demoWatchers = {};
 if (DEMO_MODE) {
   try { demoStore = JSON.parse(localStorage.getItem(LS_KEY)) || {}; } catch (e) { demoStore = {}; }
-  for (const c of ['leads','customers','providers','partners','materials','logEntries']) if (!demoStore[c]) demoStore[c] = [];
+  for (const c of ['prospects','leads','customers','providers','partners','materials','logEntries']) if (!demoStore[c]) demoStore[c] = [];
 }
 function genId(){ return 'id' + Math.random().toString(36).slice(2,10) + Date.now().toString(36); }
 function demoNotify(col){
@@ -185,7 +185,7 @@ const PROVIDER_STATUSES = ["Live","Testing","Contracting","Prospect"];
 const PARTNER_KICKERS = ["Aggregator","Alliance","Technology","Reseller"];
 const CONTACT_KINDS = ["Primary","Technical","Commercial","Billing","Compliance"];
 const LOG_KINDS = ["Note","Call","Email","Commercial"];
-const TYPE_LABEL = {leads:'Lead', customers:'Customer', providers:'Provider', partners:'Partner'};
+const TYPE_LABEL = {prospects:'Prospect', leads:'Lead', customers:'Customer', providers:'Provider', partners:'Partner'};
 // The 35 sovereign states of the Americas (UN grouping) -- shared checklist
 // for Leads' and Customers' countries-of-interest, so both feed the same
 // eventual "prospects by country" reporting.
@@ -210,7 +210,7 @@ const MATERIALS_FRESH_DAYS = 45;
 // reportable, same reasoning as Countries of interest.
 const LEAD_SOURCES = ["Website","Referral","Trade show","Cold outreach","Partner","LinkedIn","Other"];
 
-let DATA = {leads:[], customers:[], providers:[], partners:[], materials:[]};
+let DATA = {prospects:[], leads:[], customers:[], providers:[], partners:[], materials:[]};
 let LOGS = {}; // `${type}:${id}` -> entries (unsorted; render sorts)
 let curUser = null;
 
@@ -330,7 +330,7 @@ function logKey(type,id){ return type+':'+id; }
 function entriesFor(type,id){ return (LOGS[logKey(type,id)]||[]).slice(); }
 function allOpenFollowUps(){
   const out=[];
-  for(const type of ['leads','customers','providers','partners']){
+  for(const type of ['prospects','leads','customers','providers','partners']){
     for(const rec of DATA[type]){
       if(!ownerOk(rec.owner)) continue;
       for(const e of entriesFor(type,rec.id)){
@@ -346,6 +346,7 @@ function hasAnyLog(type,id){ return entriesFor(type,id).length>0; }
 // ── Nav / view meta ──────────────────────────────────────────────────────
 const NAV = [
   {view:'today', label:'Today'},
+  {view:'prospects', label:'Prospects'},
   {view:'leads', label:'Leads'},
   {view:'customers', label:'Customers'},
   {view:'providers', label:'Providers'},
@@ -356,6 +357,7 @@ const NAV = [
 function navCount(view){
   if(view==='today') return allOpenFollowUps().length;
   if(view==='coverage') return DATA.providers.reduce((n,p)=>n+(p.coverage||[]).length,0);
+  if(view==='prospects') return DATA.prospects.length;
   if(view==='leads') return DATA.leads.length;
   if(view==='customers') return DATA.customers.length;
   if(view==='providers') return DATA.providers.length;
@@ -422,6 +424,7 @@ function sidebarHTML(){
 function viewMeta(){
   const m = {
     today: {kicker:'Today', title:'Today', recordWord:null},
+    prospects: {kicker:'Cold outreach', title:'Prospects', recordWord:'prospect'},
     leads: {kicker:'Pipeline', title:'Leads', recordWord:'lead'},
     customers: {kicker:'Demand side', title:'Customers', recordWord:'customer'},
     providers: {kicker:'Supply side', title:'Providers', recordWord:'provider'},
@@ -432,6 +435,7 @@ function viewMeta(){
   return m[S.view];
 }
 function filterChips(){
+  if(S.view==='prospects') return [{v:'all',l:'All'},{v:'Customer',l:'Customer'},{v:'Provider',l:'Provider'}, ...LEAD_SOURCES.map(s=>({v:'src:'+s,l:s}))];
   if(S.view==='leads') return [{v:'all',l:'All'},{v:'Customer',l:'Customer'},{v:'Provider',l:'Provider'},...STAGES.map(s=>({v:s,l:s}))];
   if(S.view==='customers') return [{v:'all',l:'All'}, ...[...new Set(DATA.customers.map(c=>c.industry).filter(Boolean))].map(i=>({v:i,l:i}))];
   if(S.view==='providers') return [{v:'all',l:'All'},{v:'Mobile Operator',l:'Mobile Operator'},{v:'Wholesale',l:'Wholesale'},...APIS.map(a=>({v:'api:'+a,l:a}))];
@@ -481,6 +485,7 @@ function listPageHTML(){
 }
 function viewRows(){
   if(S.view==='today') return {html: todayHTML(), count:null};
+  if(S.view==='prospects') return tableRows_prospects();
   if(S.view==='leads') return tableRows_leads();
   if(S.view==='customers') return tableRows_customers();
   if(S.view==='providers') return tableRows_providers();
@@ -498,7 +503,7 @@ function todayHTML(){
   const openPipe = DATA.leads.filter(l=>ownerOk(l.owner)).reduce((n,l)=>n+(Number(l.value)||0),0);
   const pendingProviders = DATA.providers.filter(p=>ownerOk(p.owner)&&p.status!=='Live').length;
   const allRecs = [
-    ...DATA.leads.map(r=>({...r,type:'leads'})), ...DATA.customers.map(r=>({...r,type:'customers'})),
+    ...DATA.prospects.map(r=>({...r,type:'prospects'})), ...DATA.leads.map(r=>({...r,type:'leads'})), ...DATA.customers.map(r=>({...r,type:'customers'})),
     ...DATA.providers.map(r=>({...r,type:'providers'})), ...DATA.partners.map(r=>({...r,type:'partners'}))
   ].filter(r=>ownerOk(r.owner));
   const silent = allRecs.filter(r=>!hasAnyLog(r.type,r.id));
@@ -569,6 +574,37 @@ function todayHTML(){
 }
 
 // ── List tables ──────────────────────────────────────────────────────────
+function applyFilterProspect(p){
+  if(S.filter==='all') return true;
+  if(S.filter==='Customer'||S.filter==='Provider') return p.side===S.filter;
+  if(S.filter.startsWith('src:')) return p.source===S.filter.slice(4);
+  return true;
+}
+// Cold, not-yet-qualified contacts sourced for outbound campaigns (e.g.
+// uploaded to Instantly for intro emails) -- lighter than Leads (no
+// stage/interests/value yet, those are pipeline concepts that apply once
+// qualified). "Convert to Lead" promotes one, same pattern as
+// convertLead()'s Lead -> Customer/Provider.
+function tableRows_prospects(){
+  const rows = DATA.prospects.filter(p=>ownerOk(p.owner)&&applyFilterProspect(p)&&searchOk(p,[...(p.countries||[]),p.website,p.source])).sort((a,b)=>(a.name||'').localeCompare(b.name||''));
+  const html = `
+    <table class="table"><thead><tr>
+      <th>Company</th><th>Side</th><th>Countries</th><th>Website</th><th>Source</th><th>Owner</th>
+    </tr></thead><tbody>
+      ${rows.map(p=>`
+        <tr class="row-hit" onclick="openRecord('prospects','${p.id}')">
+          <td style="font-weight:600">${esc(p.name)}</td>
+          <td><span class="tag ${p.side==='Provider'?'tag-outline':'tag-neutral'}">${esc(p.side)}</span></td>
+          <td style="color:var(--color-neutral-700)">${esc((p.countries||[]).join(', '))}</td>
+          <td style="color:var(--color-accent-700)">${esc(p.website||'')}</td>
+          <td style="color:var(--color-neutral-700)">${esc(p.source||'—')}</td>
+          <td>${esc(p.owner)}</td>
+        </tr>`).join('')}
+    </tbody></table>
+    ${!rows.length?`<div style="padding:var(--space-8) 0;font-size:14px;color:var(--color-neutral-700)">No records match this filter.</div>`:''}
+  `;
+  return {html, count: rows.length};
+}
 function applyFilterLead(l){
   if(S.filter==='all') return true;
   if(S.filter==='Customer'||S.filter==='Provider') return l.side===S.filter;
@@ -868,6 +904,13 @@ function materialsBodyHTML(){
 // ── Record page ──────────────────────────────────────────────────────────
 function recordOf(type,id){ return DATA[type].find(r=>r.id===id); }
 function recordStats(type, rec){
+  if(type==='prospects'){
+    const lastLog=entriesFor(type,rec.id).sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||''))[0];
+    return [
+      {k:'Countries', v:(rec.countries||[]).length}, {k:'Contacts', v:(rec.contacts||[]).length},
+      {k:'Instantly', v:rec.instantlyStatus||'Not synced'}, {k:'Last contact', v: lastLog?relTime(lastLog.createdAt):'—'}
+    ];
+  }
   if(type==='leads') return [
     {k:'Value', v:fmtMoney(rec.value)}, {k:'Stage', v:rec.stage},
     {k:'Interest', v:(rec.interests||[]).join(', ')||'—'}, {k:'Source', v:rec.source||'—'}
@@ -895,6 +938,10 @@ function recordStats(type, rec){
   return [];
 }
 function recordFields(type, rec){
+  if(type==='prospects') return [
+    {k:'Side', v:rec.side}, {k:'Website', v:rec.website||'—'}, {k:'Countries', v:(rec.countries||[]).join(', ')||'—'},
+    {k:'Source', v:rec.source||'—'}, {k:'Instantly', v:rec.instantlyStatus||'Not synced'}, {k:'Owner', v:rec.owner}
+  ];
   if(type==='leads') return [
     {k:'Side', v:rec.side}, {k:'Website', v:rec.website||'—'}, {k:'Countries', v:(rec.countries||[]).join(', ')||'—'}, {k:'Interest', v:(rec.interests||[]).join(', ')||'—'},
     {k:'Stage', v:rec.stage}, {k:'Next step', v:rec.next||'—'}, {k:'Source', v:rec.source||'—'},
@@ -915,7 +962,7 @@ function recordFields(type, rec){
   return [];
 }
 function recordBadge1(type, rec){
-  if(type==='leads') return rec.side;
+  if(type==='prospects'||type==='leads') return rec.side;
   if(type==='customers'||type==='providers') return rec.status;
   if(type==='partners') return rec.kicker;
 }
@@ -923,7 +970,7 @@ function recordBadge1(type, rec){
 // country string. One helper so generic cross-type spots (Today's silent
 // list, the record header) don't need to know which.
 function recordCountryLabel(type, rec){
-  if(type==='leads'||type==='customers') return (rec.countries||[]).join(', ');
+  if(type==='prospects'||type==='leads'||type==='customers') return (rec.countries||[]).join(', ');
   return rec.country||'';
 }
 function recordPageHTML(){
@@ -958,6 +1005,7 @@ function recordPageHTML(){
         </div>
         <div style="display:flex;gap:var(--space-2);align-items:center">
           <button class="btn btn-ghost" onclick="deleteRecord()" style="color:var(--color-neutral-700)">Delete</button>
+          ${type==='prospects' ? `<button class="btn btn-secondary" onclick="convertProspect()">Convert to Lead</button>` : ''}
           ${type==='leads' ? `<button class="btn btn-secondary" onclick="convertLead()">Convert to ${esc(TYPE_LABEL[rec.side==='Provider'?'providers':'customers'])}</button>` : ''}
           <button class="btn btn-secondary" onclick="focusComposer()">Log activity</button>
           <button class="btn btn-primary" onclick="openEdit()">Edit record</button>
@@ -1001,7 +1049,7 @@ function recordPageHTML(){
               <dd style="margin:0;font-size:13px;font-weight:600">${esc(f.v)}</dd>
             </div>`).join('')}
         </dl>
-        ${(type==='leads'||type==='customers'||type==='partners'||type==='providers') ? documentsSectionHTML(type, rec) : ''}
+        ${(type==='prospects'||type==='leads'||type==='customers'||type==='partners'||type==='providers') ? documentsSectionHTML(type, rec) : ''}
       </aside>
       <section style="order:1;flex:3 1 520px;min-width:0;padding:var(--space-4) var(--space-6) var(--space-8)">
         ${type==='providers' ? providerCoverageHTML(rec) : ''}
@@ -1167,6 +1215,11 @@ function logSectionHTML(type, rec){
 
 // ── Edit modal ─────────────────────────────────────────────────────────
 function editFieldsFor(type){
+  if(type==='prospects') return [
+    {k:'name',label:'Name',kind:'text'}, {k:'side',label:'Side',kind:'select',opts:['Customer','Provider']},
+    {k:'website',label:'Website',kind:'text'}, {k:'owner',label:'Account manager',kind:'select',opts:TEAM},
+    {k:'source',label:'Source',kind:'select',opts:LEAD_SOURCES}
+  ];
   if(type==='leads') return [
     {k:'name',label:'Name',kind:'text'}, {k:'side',label:'Side',kind:'select',opts:['Customer','Provider']},
     {k:'website',label:'Website',kind:'text'}, {k:'stage',label:'Stage',kind:'select',opts:STAGES},
@@ -1225,7 +1278,7 @@ function editModalHTML(){
       </div>` : ''}
       ${(focus==='coverage' || (!focus && type==='providers')) ? coverageEditorHTML() : ''}
       ${(focus==='intros' || (!focus && type==='partners')) ? introsEditorHTML() : ''}
-      ${(focus==='countries' || (!focus && (type==='leads'||type==='customers'))) ? countriesEditorHTML() : ''}
+      ${(focus==='countries' || (!focus && (type==='prospects'||type==='leads'||type==='customers'))) ? countriesEditorHTML() : ''}
       ${(focus==='interests' || (!focus && type==='leads')) ? interestsEditorHTML() : ''}
       ${(!focus || focus==='contacts') ? contactsEditorHTML() : ''}
       <div style="display:flex;justify-content:flex-end;gap:var(--space-2);padding:var(--space-4) var(--space-6);border-top:2px solid var(--color-divider)">
@@ -1345,6 +1398,10 @@ function contactsEditorHTML(){
 
 // ── New record modal ───────────────────────────────────────────────────
 function newFieldsFor(type){
+  if(type==='prospects') return [
+    {k:'name',label:'Name',kind:'text'}, {k:'side',label:'Side',kind:'select',opts:['Customer','Provider']},
+    {k:'country',label:'Country',kind:'select',opts:AMERICAS_COUNTRIES}, {k:'source',label:'Source',kind:'select',opts:LEAD_SOURCES}
+  ];
   if(type==='leads') return [
     {k:'name',label:'Name',kind:'text'}, {k:'side',label:'Side',kind:'select',opts:['Customer','Provider']},
     {k:'country',label:'Country',kind:'select',opts:AMERICAS_COUNTRIES}, {k:'interest',label:'Interest',kind:'select',opts:APIS}
@@ -1525,7 +1582,8 @@ window.saveNew = async function(){
   try {
     const base = {owner:curAuthorName(), contacts:[], createdAt:new Date().toISOString()};
     let data;
-    if(type==='leads') data = {...base, name:S.newForm.name||'Untitled lead', side:S.newForm.side||'Customer', website:'', countries:[S.newForm.country].filter(Boolean), interests:[S.newForm.interest||APIS[0]], stage:'New', next:'', source:'', value:0};
+    if(type==='prospects') data = {...base, name:S.newForm.name||'Untitled prospect', side:S.newForm.side||'Customer', website:'', countries:[S.newForm.country].filter(Boolean), source:S.newForm.source||'', instantlyStatus:''};
+    else if(type==='leads') data = {...base, name:S.newForm.name||'Untitled lead', side:S.newForm.side||'Customer', website:'', countries:[S.newForm.country].filter(Boolean), interests:[S.newForm.interest||APIS[0]], stage:'New', next:'', source:'', value:0};
     else if(type==='customers') data = {...base, name:S.newForm.name||'Untitled customer', countries:[S.newForm.country].filter(Boolean), industry:S.newForm.industry||'', website:'', status:'Prospect', apis:[], arr:0};
     else if(type==='providers') data = {...base, name:S.newForm.name||'Untitled provider', country:S.newForm.country||'', kind:S.newForm.kind||PROVIDER_KINDS[0], network:'', users:0, status:'Prospect', coverage:[], apis:APIS.map(()=>0)};
     else if(type==='partners') data = {...base, name:S.newForm.name||'Untitled partner', kicker:S.newForm.kicker||PARTNER_KICKERS[0], website:'', body:S.newForm.body||'', status:'Prospect', share:'', joint:0, since:'', intros:[]};
@@ -1805,6 +1863,30 @@ async function copyLogEntries(oldType, oldId, newType, newId){
   const roots = entries.filter(e=>!e.parentId).sort((a,b)=>(a.createdAt||'').localeCompare(b.createdAt||''));
   for(const r of roots) await copyNode(r);
 }
+window.convertProspect = async function(){
+  const {type,id} = S.selected;
+  const prospect = recordOf('prospects', id);
+  if(!prospect || type!=='prospects') return;
+  if(!confirm(`Convert "${prospect.name}" to a Lead? This creates a new lead with this prospect's contacts, documents and relationship log (including any imported Instantly emails), then removes the prospect. This cannot be undone.`)) return;
+  try {
+    const data = {
+      name: prospect.name, owner: prospect.owner, side: prospect.side||'Customer',
+      website: prospect.website||'', countries: prospect.countries||[],
+      interests: [], stage: 'New', next: '', source: prospect.source||'', value: 0,
+      contacts: prospect.contacts||[], documents: prospect.documents||[],
+      createdAt: new Date().toISOString()
+    };
+    const newId = await dbAdd('leads', data);
+    await copyLogEntries('prospects', id, 'leads', newId);
+    const oldEntries = entriesFor('prospects', id);
+    for(const e of oldEntries){ await dbDelete('logEntries', e.id); }
+    await dbDelete('prospects', id);
+    window.openRecord('leads', newId);
+  } catch(e) {
+    console.error('convertProspect failed:', e);
+    alert('Could not convert this prospect. Error: ' + (e && e.message || e));
+  }
+};
 window.convertLead = async function(){
   const {type,id} = S.selected;
   const lead = recordOf('leads', id);
@@ -1988,6 +2070,7 @@ window.saveSettingsForm = async function(){
 
 // ── Boot ─────────────────────────────────────────────────────────────
 function wireListeners(){
+  dbWatch('prospects', rows=>{ DATA.prospects=rows; render(); });
   dbWatch('leads', rows=>{ DATA.leads=rows; render(); });
   dbWatch('customers', rows=>{ DATA.customers=rows; render(); });
   dbWatch('providers', rows=>{ DATA.providers=rows; render(); });
@@ -2018,14 +2101,14 @@ function bootApp(){
   const h = location.hash.replace(/^#\//,'').split('/');
   if(h[0]==='settings') S.view='settings';
   else if(h[0] && NAV.some(n=>n.view===h[0])) S.view=h[0];
-  if(['leads','customers','providers','partners'].includes(h[0]) && h[1]) S.selected={type:h[0], id:h[1]};
+  if(['prospects','leads','customers','providers','partners'].includes(h[0]) && h[1]) S.selected={type:h[0], id:h[1]};
   wireListeners();
   render();
 }
 window.addEventListener('hashchange', ()=>{
   if(!document.getElementById('app').style.display || document.getElementById('app').style.display==='none') return;
   const h = location.hash.replace(/^#\//,'').split('/');
-  if(['leads','customers','providers','partners'].includes(h[0]) && h[1]){ S.selected={type:h[0],id:h[1]}; }
+  if(['prospects','leads','customers','providers','partners'].includes(h[0]) && h[1]){ S.selected={type:h[0],id:h[1]}; }
   else if(h[0]==='settings'){ S.view='settings'; S.selected=null; }
   else if(h[0] && NAV.some(n=>n.view===h[0])){ S.view=h[0]; S.selected=null; }
   render();

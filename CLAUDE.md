@@ -34,6 +34,7 @@ shape, so every view/interaction is testable with zero setup. Nothing else in
 the file needs to change when a real project is wired in.
 
 ## Firestore Collections
+- `prospects` — {name, side (Customer|Provider), website, countries[], source (LEAD_SOURCES), owner, contacts[], documents[...], instantlyStatus (''|'Queued'|'Synced' — set by the Instantly integration, not yet wired), createdAt}. Cold, not-yet-qualified contacts sourced for outbound campaigns (uploaded to Instantly for intro emails) — deliberately lighter than Leads (no stage/interests/value, those are pipeline concepts that apply once qualified). "Convert to Lead" (`convertProspect()`) promotes one, identical pattern to `convertLead()`.
 - `leads` — {name, side (Customer|Provider), website, countries[], interests[] (API names — multi-select, own editor section like Countries), stage, owner, next, value, source (LEAD_SOURCES — fixed list, not free text), contacts[], documents[{id,category,name,url,path,uploadedBy,uploadedAt}], createdAt}
 - `customers` — {name, industry, website, countries[], status, owner, apis[], arr, contacts[], documents[{id,category,name,url,path,uploadedBy,uploadedAt}], createdAt}
 - `providers` — {name, kind (Mobile Operator|Wholesale), country, network, users, status, owner, coverage[{country,operator,apiFlags[N]}], apis[N] (derived — never edited directly, recomputed from coverage on save), contacts[], documents[{id,category,name,url,path,uploadedBy,uploadedAt}], createdAt}
@@ -129,16 +130,35 @@ correctly, and add/rename/remove tracked APIs there as Teligen's product
 lineup changes — no code deploy needed for either.
 
 ## Dashboard Views
-1. **Today** — stat strip (follow-ups open/overdue, due this week, open pipeline, providers pending, silent accounts) + pending follow-ups list + accounts with no logged activity, all scoped by the Account manager filter.
-2. **Leads** — table, filters by side + stage.
-3. **Customers** — table, filters by industry.
-4. **Providers** — table with one column per API, showing each provider's headline status per API (Live/Contracting/Testing/Prospect/—, collapsed across all its markets by `computeApis()`), filters by kind/status/API.
-5. **API coverage** — one row per country+operator (derived from every provider's `coverage`), same filters as Providers, showing that specific operator's actual per-API status. Answers "who can serve SIM Swap in Germany, and through whom, and what stage is that specific relationship at."
-6. **Partners** — card grid, filters by role (kicker).
-7. **Materials** — a shared library of files/links (decks, templates, rate cards, docs portal) grouped by category, in `NAV` like the other six. See its own section below.
-8. **Record page** (shared by leads/customers/providers/partners) — header with AM reassign (writes a system log entry) and Delete (confirm-guarded), stat strip, contact list + field sheet on the right, coverage/intros table (provider/partner only) + relationship log on the left.
-9. **Edit modal** — per-type fields, plus a coverage editor (a status dropdown per API per market row — see `MARKET_STATUSES`) for providers, intros editor for partners, contacts editor for all types.
-10. **Settings** — separate from the seven main views (sidebar footer link, not in `NAV`) — edits `settings/config` (see above).
+1. **Today** — stat strip (follow-ups open/overdue, due this week, open pipeline, providers pending, silent accounts) + pending follow-ups list + accounts with no logged activity, all scoped by the Account manager filter. Rolls up across all five record types, including Prospects.
+2. **Prospects** — table, filters by side + source. Feeds the Instantly integration (see below); "Convert to Lead" once one engages.
+3. **Leads** — table, filters by side + stage.
+4. **Customers** — table, filters by industry.
+5. **Providers** — table with one column per API, showing each provider's headline status per API (Live/Contracting/Testing/Prospect/—, collapsed across all its markets by `computeApis()`), filters by kind/status/API.
+6. **API coverage** — one row per country+operator (derived from every provider's `coverage`), same filters as Providers, showing that specific operator's actual per-API status. Answers "who can serve SIM Swap in Germany, and through whom, and what stage is that specific relationship at."
+7. **Partners** — card grid, filters by role (kicker).
+8. **Materials** — a shared library of files/links (decks, templates, rate cards, docs portal) grouped by category, in `NAV` like the other seven. See its own section below.
+9. **Record page** (shared by prospects/leads/customers/providers/partners) — header with AM reassign (writes a system log entry) and Delete (confirm-guarded), stat strip, contact list + field sheet on the right, coverage/intros table (provider/partner only) + relationship log on the left.
+10. **Edit modal** — per-type fields, plus a coverage editor (a status dropdown per API per market row — see `MARKET_STATUSES`) for providers, intros editor for partners, contacts editor for all types.
+11. **Settings** — separate from the main views (sidebar footer link, not in `NAV`) — edits `settings/config` (see above).
+
+## Instantly integration (in progress)
+Goal: upload Prospects to Instantly for intro-email campaigns, and import all
+email communication to/from `michael@teligenlabs.com` back into the matching
+prospect's relationship log (as `kind:'Email'` entries).
+- **Architecture decision**: Firebase Cloud Functions, not client-side calls.
+  Instantly's own docs explicitly warn their API key must never be exposed
+  client-side or committed to version control — this app is a public static
+  site (GitHub Pages), so the key can only ever live server-side, as a
+  Functions secret. The client calls narrow, Auth-gated callable functions;
+  it never talks to Instantly directly.
+- **Instantly API v2** (`https://api.instantly.ai/api/v2`, bearer token auth):
+  `POST /leads/bulk` for the prospect upload; `GET /emails?eaccount=...&lead=...`
+  for communication history (cursor-paginated via `starting_after`); webhooks
+  available for real-time reply notifications as an alternative to polling.
+- **Not yet built**: the `functions/` directory, the secret, and the actual
+  upload/sync functions. `instantlyStatus` on `prospects` is a placeholder
+  field for this — reads '' until that's wired up.
 
 ## Materials library
 A standalone `materials` collection — not attached to any lead/customer/
