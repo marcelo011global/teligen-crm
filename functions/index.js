@@ -10,7 +10,8 @@ const db = admin.firestore();
 const INSTANTLY_API_KEY = defineSecret('INSTANTLY_API_KEY');
 const INSTANTLY_BASE = 'https://api.instantly.ai/api/v2';
 const ALLOWED_DOMAINS = ['011global.com', '011telecom.com'];
-const MICHAEL_EACCOUNT = 'michael@teligenlabs.com';
+// Instantly mailboxes whose sent/received mail gets imported into the CRM.
+const SYNCED_EACCOUNTS = ['michael@teligenlabs.com', 'guillermo@teligen.io'];
 // Only Instantly campaigns whose name matches this are ever surfaced to the CRM —
 // the workspace has campaigns for other companies too.
 const CAMPAIGN_NAME_FILTER = /teligen/i;
@@ -158,13 +159,14 @@ async function buildEmailIndex() {
   return byEmail;
 }
 
+const SYNCED_EACCOUNTS_LOWER = SYNCED_EACCOUNTS.map(e => e.toLowerCase());
 function matchEmailToRecord(email, byEmail) {
   const candidates = [];
   if (email.from_address_email) candidates.push(email.from_address_email);
   if (email.to_address_email_list) candidates.push(...email.to_address_email_list.split(',').map(s => s.trim()));
   for (const addr of candidates) {
     const lower = (addr || '').toLowerCase();
-    if (lower && lower !== MICHAEL_EACCOUNT.toLowerCase() && byEmail.has(lower)) {
+    if (lower && !SYNCED_EACCOUNTS_LOWER.includes(lower) && byEmail.has(lower)) {
       return byEmail.get(lower);
     }
   }
@@ -198,7 +200,7 @@ async function writeLogEntryIfNew(email, match) {
   });
 }
 
-// Polls Instantly for all mail to/from michael@teligenlabs.com since the last run,
+// Polls Instantly for all mail to/from SYNCED_EACCOUNTS since the last run,
 // matches each message to a Prospect or Lead by contact email, and logs it there.
 exports.syncInstantlyEmails = onSchedule(
   {schedule: 'every 30 minutes', secrets: [INSTANTLY_API_KEY], timeoutSeconds: 300},
@@ -218,7 +220,7 @@ exports.syncInstantlyEmails = onSchedule(
 
     do {
       const params = new URLSearchParams({
-        eaccount: MICHAEL_EACCOUNT,
+        eaccount: SYNCED_EACCOUNTS.join(','),
         limit: '100',
         sort_order: 'asc',
         min_timestamp_created: lastTimestamp,

@@ -144,7 +144,8 @@ lineup changes — no code deploy needed for either.
 
 ## Instantly integration (live)
 Uploads Prospects to Instantly for intro-email campaigns, and imports all email
-communication to/from `michael@teligenlabs.com` back into the matching
+communication to/from `SYNCED_EACCOUNTS` (`functions/index.js` —
+`michael@teligenlabs.com`, `guillermo@teligen.io`) back into the matching
 Prospect's (or Lead's, post-conversion) relationship log as `kind:'Email'`
 entries. Deployed to the `teligen-crm` Firebase project, region `us-central1`.
 - **Architecture**: Firebase Cloud Functions (`functions/index.js`), not
@@ -168,8 +169,12 @@ entries. Deployed to the `teligen-crm` Firebase project, region `us-central1`.
   `confirmInstantlySync()` in `index.html`); currently uploads one prospect
   at a time (whichever record is open), not a bulk multi-select.
 - **`syncInstantlyEmails`** (scheduled, every 30 min) — polls
-  `GET /emails?eaccount=michael@teligenlabs.com&min_timestamp_created=...`
-  since the last run (cursor kept in `settings/instantlySync`), matches each
+  `GET /emails?eaccount=<SYNCED_EACCOUNTS joined by comma>&min_timestamp_created=...`
+  since the last run (cursor kept in `settings/instantlySync`, shared across all
+  synced mailboxes — adding a new mailbox to `SYNCED_EACCOUNTS` needs a one-time
+  `firebase firestore:delete settings/instantlySync --force` to re-backfill its
+  history; already-synced mail from the existing mailbox(es) is skipped again via
+  the `instantlyId` dedupe below, not double-logged), matches each
   email's from/to address against every existing record's first contact email
   (Prospects, Leads, Customers, Providers, Partners — `buildEmailIndex()`,
   loaded fresh into memory each run, fine at this scale), and writes a
