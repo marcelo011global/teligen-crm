@@ -201,15 +201,32 @@ const PARTNER_KICKERS = ["Aggregator","Alliance","Technology","Reseller"];
 const CONTACT_KINDS = ["Primary","Technical","Commercial","Billing","Compliance"];
 const LOG_KINDS = ["Note","Call","Email","Commercial"];
 const TYPE_LABEL = {prospects:'Prospect', leads:'Lead', customers:'Customer', providers:'Provider', partners:'Partner'};
-// The 35 sovereign states of the Americas (UN grouping) -- shared checklist
-// for Leads' and Customers' countries-of-interest, so both feed the same
-// eventual "prospects by country" reporting.
+// Every country, for Prospects'/Leads'/Customers' countries-of-interest and
+// the New-record country picker -- a fixed list (not free text) so both feed
+// the same eventual "prospects by country" reporting. The 35 Americas come
+// first (the core market, and keeps "United States" as the picker default),
+// then the rest of the world alphabetically. No apostrophes in names: they're
+// inlined into onchange="..." handlers, where an apostrophe would end the string.
 const AMERICAS_COUNTRIES = [
   "United States","Canada","Mexico",
   "Belize","Costa Rica","El Salvador","Guatemala","Honduras","Nicaragua","Panama",
   "Antigua and Barbuda","Bahamas","Barbados","Cuba","Dominica","Dominican Republic","Grenada","Haiti","Jamaica","Saint Kitts and Nevis","Saint Lucia","Saint Vincent and the Grenadines","Trinidad and Tobago",
   "Argentina","Bolivia","Brazil","Chile","Colombia","Ecuador","Guyana","Paraguay","Peru","Suriname","Uruguay","Venezuela"
 ];
+const OTHER_COUNTRIES = [
+  "Afghanistan","Albania","Algeria","Andorra","Angola","Armenia","Australia","Austria","Azerbaijan","Bahrain","Bangladesh","Belarus","Belgium","Benin","Bhutan","Bosnia and Herzegovina","Botswana","Brunei","Bulgaria","Burkina Faso","Burundi",
+  "Cabo Verde","Cambodia","Cameroon","Central African Republic","Chad","China","Comoros","Croatia","Cyprus","Czechia",
+  "DR Congo","Denmark","Djibouti","Egypt","Equatorial Guinea","Eritrea","Estonia","Eswatini","Ethiopia","Fiji","Finland","France",
+  "Gabon","Gambia","Georgia","Germany","Ghana","Greece","Guinea","Guinea-Bissau","Hungary","Iceland","India","Indonesia","Iran","Iraq","Ireland","Israel","Italy","Ivory Coast",
+  "Japan","Jordan","Kazakhstan","Kenya","Kiribati","Kosovo","Kuwait","Kyrgyzstan","Laos","Latvia","Lebanon","Lesotho","Liberia","Libya","Liechtenstein","Lithuania","Luxembourg",
+  "Madagascar","Malawi","Malaysia","Maldives","Mali","Malta","Marshall Islands","Mauritania","Mauritius","Micronesia","Moldova","Monaco","Mongolia","Montenegro","Morocco","Mozambique","Myanmar",
+  "Namibia","Nauru","Nepal","Netherlands","New Zealand","Niger","Nigeria","North Korea","North Macedonia","Norway","Oman",
+  "Pakistan","Palau","Palestine","Papua New Guinea","Philippines","Poland","Portugal","Qatar","Republic of the Congo","Romania","Russia","Rwanda",
+  "Samoa","San Marino","Sao Tome and Principe","Saudi Arabia","Senegal","Serbia","Seychelles","Sierra Leone","Singapore","Slovakia","Slovenia","Solomon Islands","Somalia","South Africa","South Korea","South Sudan","Spain","Sri Lanka","Sudan","Sweden","Switzerland","Syria",
+  "Taiwan","Tajikistan","Tanzania","Thailand","Timor-Leste","Togo","Tonga","Tunisia","Turkiye","Turkmenistan","Tuvalu",
+  "Uganda","Ukraine","United Arab Emirates","United Kingdom","Uzbekistan","Vanuatu","Vatican City","Vietnam","Yemen","Zambia","Zimbabwe"
+];
+const COUNTRIES = [...AMERICAS_COUNTRIES, ...OTHER_COUNTRIES];
 // Documents live only on customers and partners (see documentsSectionHTML).
 // Stored in Firebase Storage under docs/{type}/{id}/..., with just the
 // metadata (name, url, storage path, category, uploader) kept on the
@@ -249,6 +266,13 @@ const S = {
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+// Only http(s) links are ever rendered as hrefs -- a pasted "javascript:..." value must not become clickable.
+function safeUrl(u){
+  u = String(u||'').trim();
+  if(!u) return '';
+  if(!/^https?:\/\//i.test(u)) u = 'https://' + u.replace(/^\/+/, '');
+  try { const p = new URL(u); return (p.protocol==='http:'||p.protocol==='https:') ? p.href : ''; } catch(e) { return ''; }
+}
 function initials(name){ if(!name) return '—'; const p=String(name).trim().split(/\s+/); return ((p[0]?.[0]||'')+(p[1]?.[0]||'')).toUpperCase()||'—'; }
 function curAuthorName(){
   if(DEMO_MODE) return 'Demo User';
@@ -340,7 +364,7 @@ function ownerOk(owner){ return S.ownerFilter==='All' || owner===S.ownerFilter; 
 function searchOk(rec, extraFields){
   if(!S.q) return true;
   const q=S.q.toLowerCase();
-  const hay=[rec.name, ...(extraFields||[]), ...(rec.contacts||[]).flatMap(c=>[c.name,c.role,c.email,c.phone])]
+  const hay=[rec.name, ...(extraFields||[]), ...(rec.contacts||[]).flatMap(c=>[c.name,c.role,c.email,c.phone,c.linkedin])]
     .filter(Boolean).join(' ').toLowerCase();
   return hay.includes(q);
 }
@@ -1016,16 +1040,16 @@ function recordStats(type, rec){
 }
 function recordFields(type, rec){
   if(type==='prospects') return [
-    {k:'Side', v:rec.side}, {k:'Website', v:rec.website||'—'}, {k:'Countries', v:(rec.countries||[]).join(', ')||'—'},
+    {k:'Side', v:rec.side}, {k:'Website', v:rec.website||'—'}, {k:'LinkedIn', v:rec.linkedin||'—', href:safeUrl(rec.linkedin)}, {k:'Countries', v:(rec.countries||[]).join(', ')||'—'},
     {k:'Source', v:rec.source||'—'}, {k:'Instantly', v:rec.instantlyStatus||'Not synced'}, {k:'Owner', v:rec.owner}
   ];
   if(type==='leads') return [
-    {k:'Side', v:rec.side}, {k:'Website', v:rec.website||'—'}, {k:'Countries', v:(rec.countries||[]).join(', ')||'—'}, {k:'Interest', v:(rec.interests||[]).join(', ')||'—'},
+    {k:'Side', v:rec.side}, {k:'Website', v:rec.website||'—'}, {k:'LinkedIn', v:rec.linkedin||'—', href:safeUrl(rec.linkedin)}, {k:'Countries', v:(rec.countries||[]).join(', ')||'—'}, {k:'Interest', v:(rec.interests||[]).join(', ')||'—'},
     {k:'Stage', v:rec.stage}, {k:'Next step', v:rec.next||'—'}, {k:'Source', v:rec.source||'—'},
     {k:'Value', v:fmtMoney(rec.value)}, {k:'Owner', v:rec.owner}
   ];
   if(type==='customers') return [
-    {k:'Industry', v:rec.industry}, {k:'Website', v:rec.website||'—'}, {k:'Countries', v:(rec.countries||[]).join(', ')||'—'},
+    {k:'Industry', v:rec.industry}, {k:'Website', v:rec.website||'—'}, {k:'LinkedIn', v:rec.linkedin||'—', href:safeUrl(rec.linkedin)}, {k:'Countries', v:(rec.countries||[]).join(', ')||'—'},
     {k:'Status', v:rec.status}, {k:'APIs in use', v:(rec.apis||[]).join(', ')||'—'}, {k:'ARR', v:fmtMoney(rec.arr)}, {k:'Owner', v:rec.owner}
   ];
   if(type==='providers') return [
@@ -1033,7 +1057,7 @@ function recordFields(type, rec){
     {k:'Users', v:fmtUsers(rec.users)}, {k:'Status', v:rec.status}, {k:'Owner', v:rec.owner}
   ];
   if(type==='partners') return [
-    {k:'Role', v:rec.kicker}, {k:'Website', v:rec.website||'—'}, {k:'Status', v:rec.status||'—'}, {k:'Revenue share', v:rec.share||'—'},
+    {k:'Role', v:rec.kicker}, {k:'Website', v:rec.website||'—'}, {k:'LinkedIn', v:rec.linkedin||'—', href:safeUrl(rec.linkedin)}, {k:'Status', v:rec.status||'—'}, {k:'Revenue share', v:rec.share||'—'},
     {k:'Joint customers', v:rec.joint||0}, {k:'Partner since', v:rec.since||'—'}, {k:'Owner', v:rec.owner}
   ];
   return [];
@@ -1116,6 +1140,7 @@ function recordPageHTML(){
             <div style="font-size:13px;color:var(--color-neutral-700)">${esc(c.role||'')}</div>
             ${c.email?`<a href="mailto:${esc(c.email)}" style="font-size:13px">${esc(c.email)}</a>`:''}
             ${c.phone?`<a href="tel:${esc(c.phone)}" style="font-size:13px;color:var(--color-text);font-variant-numeric:tabular-nums">${esc(c.phone)}</a>`:''}
+            ${safeUrl(c.linkedin)?`<a href="${esc(safeUrl(c.linkedin))}" target="_blank" rel="noopener noreferrer" style="font-size:13px">LinkedIn</a>`:''}
           </div>`).join('') : ''}
         <div style="padding:var(--space-6) var(--space-6) var(--space-2);border-top:2px solid var(--color-divider)">
           <h2 style="margin:0;font-size:13px;letter-spacing:0.08em;text-transform:uppercase">${TYPE_LABEL[type]} details</h2>
@@ -1124,7 +1149,7 @@ function recordPageHTML(){
           ${fields.map(f=>`
             <div style="display:grid;grid-template-columns:118px 1fr;gap:var(--space-3);padding:9px var(--space-6);border-top:1px solid var(--color-divider)">
               <dt style="font-size:12px;color:var(--color-neutral-700)">${esc(f.k)}</dt>
-              <dd style="margin:0;font-size:13px;font-weight:600">${esc(f.v)}</dd>
+              <dd style="margin:0;font-size:13px;font-weight:600">${f.href ? `<a href="${esc(f.href)}" target="_blank" rel="noopener noreferrer">${esc(f.v)}</a>` : esc(f.v)}</dd>
             </div>`).join('')}
         </dl>
         ${(type==='prospects'||type==='leads'||type==='customers'||type==='partners'||type==='providers') ? documentsSectionHTML(type, rec) : ''}
@@ -1295,18 +1320,18 @@ function logSectionHTML(type, rec){
 function editFieldsFor(type){
   if(type==='prospects') return [
     {k:'name',label:'Name',kind:'text'}, {k:'side',label:'Side',kind:'select',opts:['Customer','Provider']},
-    {k:'website',label:'Website',kind:'text'}, {k:'owner',label:'Account manager',kind:'select',opts:TEAM},
+    {k:'website',label:'Website',kind:'text'}, {k:'linkedin',label:'LinkedIn',kind:'text'}, {k:'owner',label:'Account manager',kind:'select',opts:TEAM},
     {k:'source',label:'Source',kind:'select',opts:LEAD_SOURCES}
   ];
   if(type==='leads') return [
     {k:'name',label:'Name',kind:'text'}, {k:'side',label:'Side',kind:'select',opts:['Customer','Provider']},
-    {k:'website',label:'Website',kind:'text'}, {k:'stage',label:'Stage',kind:'select',opts:STAGES},
+    {k:'website',label:'Website',kind:'text'}, {k:'linkedin',label:'LinkedIn',kind:'text'}, {k:'stage',label:'Stage',kind:'select',opts:STAGES},
     {k:'owner',label:'Account manager',kind:'select',opts:TEAM}, {k:'next',label:'Next step',kind:'text'},
     {k:'source',label:'Source',kind:'select',opts:LEAD_SOURCES}, {k:'value',label:'Value (USD)',kind:'number'}
   ];
   if(type==='customers') return [
     {k:'name',label:'Name',kind:'text'}, {k:'industry',label:'Industry',kind:'text'},
-    {k:'website',label:'Website',kind:'text'},
+    {k:'website',label:'Website',kind:'text'}, {k:'linkedin',label:'LinkedIn',kind:'text'},
     {k:'status',label:'Status',kind:'select',opts:CUSTOMER_STATUSES}, {k:'owner',label:'Account manager',kind:'select',opts:TEAM},
     {k:'apis',label:'APIs in use (comma-sep)',kind:'text',list:true}, {k:'arr',label:'ARR (USD)',kind:'number'}
   ];
@@ -1318,7 +1343,7 @@ function editFieldsFor(type){
   ];
   if(type==='partners') return [
     {k:'name',label:'Name',kind:'text'}, {k:'kicker',label:'Role',kind:'select',opts:PARTNER_KICKERS},
-    {k:'website',label:'Website',kind:'text'}, {k:'status',label:'Status',kind:'text'},
+    {k:'website',label:'Website',kind:'text'}, {k:'linkedin',label:'LinkedIn',kind:'text'}, {k:'status',label:'Status',kind:'text'},
     {k:'owner',label:'Account manager',kind:'select',opts:TEAM}, {k:'share',label:'Revenue share',kind:'text'},
     {k:'joint',label:'Joint customers',kind:'number'}, {k:'since',label:'Partner since',kind:'text'},
     {k:'body',label:'Summary',kind:'text'}
@@ -1424,11 +1449,12 @@ function countriesEditorHTML(){
   <div style="border-top:2px solid var(--color-divider)">
     <div style="display:flex;align-items:center;gap:var(--space-3);padding:var(--space-4) var(--space-6)">
       <h4 style="margin:0;font-size:13px;letter-spacing:0.08em;text-transform:uppercase">Countries of interest</h4>
-      <span style="font-size:11px;color:var(--color-neutral-700)">${selected.length} selected</span>
+      <span id="country-count" style="font-size:11px;color:var(--color-neutral-700)">${selected.length} selected</span>
+      <input class="input" placeholder="Filter countries" style="margin-left:auto;width:180px" oninput="filterCountryChecks(this.value)">
     </div>
-    <div style="padding:0 var(--space-6) var(--space-4);display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px 12px">
-      ${AMERICAS_COUNTRIES.map(c=>`
-        <label style="display:flex;align-items:center;gap:7px;font-size:13px;cursor:pointer">
+    <div style="padding:0 var(--space-6) var(--space-4);max-height:300px;overflow:auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px 12px;align-content:start">
+      ${COUNTRIES.map(c=>`
+        <label data-country="${esc(c.toLowerCase())}" style="display:flex;align-items:center;gap:7px;font-size:13px;cursor:pointer">
           <input type="checkbox" ${selected.includes(c)?'checked':''} onchange="toggleEditCountry('${esc(c)}')">
           ${esc(c)}
         </label>`).join('')}
@@ -1470,6 +1496,7 @@ function contactsEditorHTML(){
         <div class="field"><label>Contact type</label><select class="input" onchange="contactFieldChange(${i},'kind',this.value)">${CONTACT_KINDS.map(o=>`<option ${c.kind===o?'selected':''}>${o}</option>`).join('')}</select></div>
         <div class="field"><label>Email</label><input class="input" value="${esc(c.email||'')}" onchange="contactFieldChange(${i},'email',this.value)"></div>
         <div class="field"><label>Phone</label><input class="input" value="${esc(c.phone||'')}" onchange="contactFieldChange(${i},'phone',this.value)"></div>
+        <div class="field" style="grid-column:1 / -1"><label>LinkedIn</label><input class="input" placeholder="linkedin.com/in/..." value="${esc(c.linkedin||'')}" onchange="contactFieldChange(${i},'linkedin',this.value)"></div>
       </div>`).join('')}
   </div>`;
 }
@@ -1478,13 +1505,13 @@ function contactsEditorHTML(){
 function newFieldsFor(type){
   if(type==='prospects') return [
     {k:'name',label:'Name',kind:'text'}, {k:'side',label:'Side',kind:'select',opts:['Customer','Provider']},
-    {k:'country',label:'Country',kind:'select',opts:AMERICAS_COUNTRIES}, {k:'source',label:'Source',kind:'select',opts:LEAD_SOURCES}
+    {k:'country',label:'Country',kind:'select',opts:COUNTRIES}, {k:'source',label:'Source',kind:'select',opts:LEAD_SOURCES}
   ];
   if(type==='leads') return [
     {k:'name',label:'Name',kind:'text'}, {k:'side',label:'Side',kind:'select',opts:['Customer','Provider']},
-    {k:'country',label:'Country',kind:'select',opts:AMERICAS_COUNTRIES}, {k:'interest',label:'Interest',kind:'select',opts:APIS}
+    {k:'country',label:'Country',kind:'select',opts:COUNTRIES}, {k:'interest',label:'Interest',kind:'select',opts:APIS}
   ];
-  if(type==='customers') return [{k:'name',label:'Name',kind:'text'},{k:'country',label:'Country',kind:'select',opts:AMERICAS_COUNTRIES},{k:'industry',label:'Industry',kind:'text'}];
+  if(type==='customers') return [{k:'name',label:'Name',kind:'text'},{k:'country',label:'Country',kind:'select',opts:COUNTRIES},{k:'industry',label:'Industry',kind:'text'}];
   if(type==='providers') return [{k:'name',label:'Name',kind:'text'},{k:'country',label:'Country',kind:'text'},{k:'kind',label:'Type',kind:'select',opts:PROVIDER_KINDS}];
   if(type==='partners') return [{k:'name',label:'Name',kind:'text'},{k:'kicker',label:'Role',kind:'select',opts:PARTNER_KICKERS},{k:'body',label:'Summary',kind:'text'}];
   return [];
@@ -1648,7 +1675,13 @@ window.toggleEditCountry = function(country){
   const list = S.editForm.countries || (S.editForm.countries = []);
   const i = list.indexOf(country);
   if(i>=0) list.splice(i,1); else list.push(country);
-  render();
+  // No render(): re-rendering would wipe the country filter text and the list's scroll position.
+  const counter = document.getElementById('country-count');
+  if(counter) counter.textContent = list.length + ' selected';
+};
+window.filterCountryChecks = function(q){
+  q = String(q||'').trim().toLowerCase();
+  document.querySelectorAll('label[data-country]').forEach(l=>{ l.style.display = (!q || l.dataset.country.includes(q)) ? 'flex' : 'none'; });
 };
 window.toggleEditInterest = function(api){
   const list = S.editForm.interests || (S.editForm.interests = []);
@@ -1670,7 +1703,7 @@ window.setCovApiStatus = function(i,ai,value){
 window.addIntroRow = function(){ S.editIntros.push({name:'',side:'Customer',country:'',industry:'',stage:'Offered',note:''}); render(); };
 window.removeIntroRow = function(i){ S.editIntros.splice(i,1); render(); };
 window.introFieldChange = function(i,k,v){ S.editIntros[i][k]=v; };
-window.addContactRow = function(){ S.editContacts.push({name:'',role:'',kind:'Primary',email:'',phone:''}); render(); };
+window.addContactRow = function(){ S.editContacts.push({name:'',role:'',kind:'Primary',email:'',phone:'',linkedin:''}); render(); };
 window.removeContactRow = function(i){ S.editContacts.splice(i,1); render(); };
 window.contactFieldChange = function(i,k,v){ S.editContacts[i][k]=v; };
 
@@ -2018,7 +2051,7 @@ window.convertProspect = async function(){
   try {
     const data = {
       name: prospect.name, owner: prospect.owner, side: prospect.side||'Customer',
-      website: prospect.website||'', countries: prospect.countries||[],
+      website: prospect.website||'', linkedin: prospect.linkedin||'', countries: prospect.countries||[],
       interests: [], stage: 'New', next: '', source: prospect.source||'', value: 0,
       contacts: prospect.contacts||[], documents: prospect.documents||[],
       createdAt: new Date().toISOString()
@@ -2049,7 +2082,7 @@ window.convertLead = async function(){
     };
     let data;
     if(targetType==='customers'){
-      data = {...base, website: lead.website||'', countries: lead.countries||[], industry:'', status:'Onboarding', apis: lead.interests||[], arr: Number(lead.value)||0};
+      data = {...base, website: lead.website||'', linkedin: lead.linkedin||'', countries: lead.countries||[], industry:'', status:'Onboarding', apis: lead.interests||[], arr: Number(lead.value)||0};
     } else {
       data = {...base, country: (lead.countries||[])[0]||'', kind: PROVIDER_KINDS[0], network:'', users:0, status:'Testing', coverage:[], apis: APIS.map(()=>0)};
     }

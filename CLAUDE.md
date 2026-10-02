@@ -102,16 +102,26 @@ Confirm-guarded, since step 3 is irreversible. Provider conversion is fairly
 bare (no coverage yet, `country` from the first entry in `countries[]` if
 any) — expect to fill in Coverage manually afterward.
 
-## Countries of interest (Leads, Customers)
-`AMERICAS_COUNTRIES` (top of `index.html`) is a fixed checklist of the 35
-sovereign states of the Americas — a dedicated section in the edit modal
-(`countriesEditorHTML()`), not a free-text field, so the data stays clean
-enough to eventually build a "prospects by country" report from. Both types
-store it the same way (`countries: string[]`); providers/partners keep a
+## Countries of interest (Prospects, Leads, Customers)
+`COUNTRIES` (top of `index.html`) is a fixed checklist of all 197 countries
+(193 UN members + Vatican City, Palestine, Kosovo, Taiwan): the 35 of the
+Americas first (`AMERICAS_COUNTRIES`, the core market — also keeps United States
+as the New-record picker default), then `OTHER_COUNTRIES` alphabetically. Names
+must not contain apostrophes (they're inlined into `onchange="..."` strings),
+hence "Ivory Coast" / "Turkiye". It's a dedicated section in the edit modal
+(`countriesEditorHTML()`, scrollable, with a filter box), not a free-text field, so the data stays clean
+enough to eventually build a "prospects by country" report from. The
+types store it the same way (`countries: string[]`); providers/partners keep a
 single `country` string instead (one home market, not a market list).
 `recordCountryLabel(type, rec)` is the one place that reads either shape —
 use it for any cross-type display rather than reaching for `.country`
 directly on a lead.
+
+**LinkedIn**: each entry in `contacts[]` has an optional `linkedin` URL (person
+profile), and prospects/leads/customers/partners have an optional company-level
+`linkedin` string next to `website`. Rendered as links only through `safeUrl()`
+(http/https only, bare `linkedin.com/...` gets `https://`) — never put a raw
+user-entered value in an `href`.
 
 A lead's **interests** (which of the tracked APIs it's after) is the same
 pattern, one level simpler: `interests: string[]` with its own editor
