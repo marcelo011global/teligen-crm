@@ -25,6 +25,93 @@
   .auth-msg{margin-top:var(--space-3);font-size:13px;padding:var(--space-2) var(--space-3);border:1px solid var(--color-divider)}
   .auth-msg.error{color:var(--color-accent-700);border-color:var(--color-accent-300);background:var(--color-accent-100)}
   .demo-banner{background:var(--color-accent-100);color:var(--color-accent-800);font-size:12px;padding:6px var(--space-4);border-bottom:2px solid var(--color-divider)}
+
+  /* Repeated-country cells in the coverage table are blank on desktop (grouped look), filled on phones where each row is its own card */
+  .cc-dupe .cc-text{visibility:hidden}
+  .m-only{display:none}
+  .log-text{white-space:pre-wrap;overflow-wrap:anywhere}
+
+  /* ── Phones ─────────────────────────────────────────────────────────────
+     Layout is inline-styled throughout, so the phone layout leans on (a) redefining the
+     spacing tokens the inline styles already use, (b) a few structural classes, and
+     (c) !important overrides for the handful of fixed desktop widths. */
+  @media (max-width: 760px){
+    :root{--space-6:16px;--space-8:24px}
+    body{overflow-x:hidden;-webkit-text-size-adjust:100%}
+    .m-only{display:flex}
+    .app-shell{display:block !important}
+    .app-side{display:none !important}
+    .app-main{padding-bottom:88px}
+
+    /* top bar + menu drawer replace the 232px sidebar */
+    .m-topbar{position:sticky;top:0;z-index:40;align-items:center;gap:12px;padding:8px 16px;min-height:52px;background:var(--color-bg);border-bottom:2px solid var(--color-divider)}
+    .m-topbar img{height:28px;width:auto;display:block}
+    .m-title{flex:1;min-width:0;font-family:var(--font-heading);font-weight:800;font-size:18px;letter-spacing:-0.01em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .m-btn{all:unset;box-sizing:border-box;cursor:pointer;min-height:40px;min-width:40px;display:flex;align-items:center;justify-content:center;padding:0 10px;font-size:14px;font-weight:600;border:1px solid var(--color-divider)}
+    .m-back{color:var(--color-accent-700);border-color:transparent;padding:0;justify-content:flex-start;min-width:0;flex:1;font-size:15px}
+    .m-drawer-back{position:fixed;inset:0;z-index:44;background:color-mix(in srgb,#201e1d 45%,transparent)}
+    .m-drawer{position:fixed;left:0;right:0;top:0;z-index:45;max-height:100dvh;overflow:auto;background:var(--color-bg);border-bottom:2px solid var(--color-divider);display:flex;flex-direction:column}
+    .m-drawer button.nav-item{all:unset;box-sizing:border-box;display:flex;align-items:baseline;gap:8px;width:100%;padding:14px 16px;font-size:16px;cursor:pointer;border-left:3px solid transparent;border-top:1px solid var(--color-divider)}
+    .m-drawer-foot{padding:14px 16px;border-top:2px solid var(--color-divider);font-size:13px;display:flex;flex-wrap:wrap;gap:6px 16px;align-items:center}
+
+    /* list pages */
+    .lp-head{padding-top:var(--space-4) !important}
+    .lp-head{gap:var(--space-2) var(--space-3) !important}
+    .lp-head > div:first-child{display:none}  /* the top bar already names the section */
+    .lp-head .field{width:auto !important;flex:1 1 calc(50% - 8px) !important;min-width:0 !important;max-width:none !important}
+    .lp-head > span{max-width:none !important}
+    .new-btn{position:fixed;right:16px;bottom:16px;z-index:35;min-height:48px;padding:0 20px;box-shadow:0 4px 14px rgba(32,30,29,.35)}
+    .chips-row{flex-wrap:nowrap !important;overflow-x:auto;min-height:0 !important;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+    .chips-row::-webkit-scrollbar{display:none}
+    .chips-row > *{flex:none}
+    .chip{padding:8px 14px;font-size:13px}
+
+    /* tables become stacked cards (labels are filled in by labelTables()) */
+    .table:not(.table-matrix), .table:not(.table-matrix) tbody, .table:not(.table-matrix) tr, .table:not(.table-matrix) td{display:block;width:100%;box-sizing:border-box}
+    .table:not(.table-matrix) thead{display:none}
+    .table:not(.table-matrix) tr{padding:12px 0;border-top:1px solid var(--color-divider)}
+    .table:not(.table-matrix) tr:first-child{border-top:0}
+    .table:not(.table-matrix) td{border:0;padding:2px 0;display:flex;justify-content:space-between;gap:12px;text-align:right;overflow-wrap:anywhere}
+    .table:not(.table-matrix) td::before{content:attr(data-label);flex:none;text-align:left;color:var(--color-neutral-700);font-size:11px;letter-spacing:.06em;text-transform:uppercase;padding-top:3px}
+    .table:not(.table-matrix) td:first-child{display:block;text-align:left;font-size:16px;padding-bottom:4px}
+    .table:not(.table-matrix) td:first-child::before{display:none}
+    .table:not(.table-matrix) td:empty, .table:not(.table-matrix) td[data-empty]{display:none}
+    .table:not(.table-matrix) td:has(> .none:only-child){display:none}
+    .cc-dupe .cc-text{visibility:visible}
+    .table-matrix th,.table-matrix td{white-space:nowrap}
+
+    /* Today */
+    .fu-row{grid-template-columns:1fr !important;gap:var(--space-3) !important}
+    .fu-actions{display:flex !important;gap:var(--space-2) !important}
+    .fu-actions .btn{flex:1}
+
+    /* record page */
+    .rec-title{font-size:30px !important;overflow-wrap:anywhere}
+    .rec-crumb{display:none !important}  /* the top bar's back link replaces the breadcrumb */
+    .rec-stats > div{padding:var(--space-3) var(--space-4) !important}
+    .rec-stats > div > div:nth-child(2){font-size:22px !important;overflow-wrap:anywhere}
+    .seg{margin-left:0 !important;width:100%}
+    .seg-opt{flex:1;justify-content:center}
+    .rec-actions{width:100%;flex-wrap:wrap}
+    .rec-actions .btn{flex:1 1 calc(50% - 8px);justify-content:center;min-height:44px}
+    .rec-aside{max-width:none !important;min-width:0 !important;flex:1 1 100% !important;border-left:0 !important;border-top:2px solid var(--color-divider)}
+    #composer-box > .avatar{display:none}
+    #composer-box{padding:var(--space-3) !important}
+    #composer-box .btn-primary{flex:1;min-height:44px}
+
+    /* modals go full-screen */
+    .modal-wrap{padding:0 !important;align-items:stretch !important;overflow:auto;z-index:60}
+    .modal-card{width:100% !important;max-width:none !important;min-height:100%;border:0 !important;box-sizing:border-box}
+    .modal-card > header{position:sticky;top:0;z-index:2;background:var(--color-bg);flex-wrap:wrap;gap:var(--space-2) var(--space-3) !important}
+    .modal-card > header h3{flex:1 1 100% !important}
+    .modal-card > header .btn{flex:1;min-height:44px;justify-content:center}
+    .modal-card div[style*="grid-template-columns:1fr 1fr"]{grid-template-columns:1fr !important}
+    div[style*="grid-template-columns:1fr 1fr auto"]{grid-template-columns:1fr !important}
+
+    /* touch targets; 16px inputs so iOS Safari doesn't zoom on focus */
+    .input,select.input,textarea.input,input.input{font-size:16px !important;min-height:44px}
+    .btn{min-height:40px}
+  }
 </style>
 </head>
 <body>
@@ -261,6 +348,7 @@ const S = {
   matEditingId: null, matEditNote: '', // which material's description is being edited inline, if any
   showInstantlySync: false, instantlySyncLoading: false, instantlySyncError: '',
   instantlySyncCampaigns: null, instantlySyncSelected: '', // campaigns list is cached for the session once loaded
+  navOpen: false, // phone menu drawer
   todayProspectsOpen: false // collapsed by default -- Instantly auto-creates prospects with no log yet, so this list can get long
 };
 
@@ -409,10 +497,18 @@ function navCount(view){
 }
 
 // ── Root render ──────────────────────────────────────────────────────────
+// Phone card layout shows each cell's column name; copy the <th> text onto the <td>s.
+function labelTables(root){
+  root.querySelectorAll('table.table').forEach(t=>{
+    const heads = [...t.querySelectorAll('thead th')].map(h=>h.textContent.trim());
+    t.querySelectorAll('tbody tr').forEach(tr=>{ [...tr.children].forEach((td,i)=>{ if(heads[i]) td.setAttribute('data-label', heads[i]); if(td.textContent.trim()==='—') td.setAttribute('data-empty','1'); }); });
+  });
+}
 function render(){
   const el = document.getElementById('app');
   try {
     el.innerHTML = shellHTML();
+    labelTables(el);
   } catch(e) {
     // A rendering bug used to leave whatever was on screen frozen in place
     // (e.g. a modal that silently "won't close") with zero indication why.
@@ -429,9 +525,10 @@ function shellHTML(){
   </div>` : '';
   return `
   ${banner}${errBanner}
-  <div style="display:grid;grid-template-columns:232px 1fr;min-height:100vh;background:var(--color-bg);color:var(--color-text);font-family:var(--font-body)">
+  <div class="app-shell" style="display:grid;grid-template-columns:232px 1fr;min-height:100vh;background:var(--color-bg);color:var(--color-text);font-family:var(--font-body)">
+    ${mobileBarHTML()}
     ${sidebarHTML()}
-    <main style="min-width:0;display:flex;flex-direction:column">
+    <main class="app-main" style="min-width:0;display:flex;flex-direction:column">
       ${S.selected ? recordPageHTML() : (S.view==='settings' ? settingsPageHTML() : listPageHTML())}
     </main>
   </div>
@@ -440,9 +537,40 @@ function shellHTML(){
   ${S.showInstantlySync ? instantlySyncModalHTML() : ''}
   `;
 }
+// Phones: a sticky top bar (logo/section title, or a back link inside a record) with a
+// menu drawer, instead of the desktop sidebar. Hidden entirely above 760px via .m-only.
+function mobileBarHTML(){
+  const sel = S.selected;
+  const navLabel = (NAV.find(n=>n.view===S.view)||{}).label || 'Settings';
+  const left = sel
+    ? `<button class="m-btn m-back" onclick="closeRecord()">‹ ${esc(TYPE_LABEL[sel.type])}s</button>`
+    : `<img src="logo.png" alt="Teligen"><span class="m-title">${esc(navLabel)}</span>`;
+  return `
+  <div class="m-topbar m-only">
+    ${left}
+    <button class="m-btn" aria-label="Menu" onclick="toggleNav()">${S.navOpen?'Close':'Menu'}</button>
+  </div>
+  ${S.navOpen ? `
+  <div class="m-drawer-back m-only" onclick="toggleNav()"></div>
+  <nav class="m-drawer m-only">
+    <div style="display:flex;align-items:center;gap:12px;padding:8px 16px;min-height:52px">
+      <img src="logo.png" alt="Teligen" style="height:28px;width:auto"><span style="flex:1"></span>
+      <button class="m-btn" onclick="toggleNav()">Close</button>
+    </div>
+    ${NAV.map(n=>`
+      <button class="nav-item ${S.view===n.view && !S.selected ? 'nav-on' : 'nav-off'}" onclick="nav('${n.view}')">
+        <span style="flex:1">${n.label}</span><span style="font-size:12px;color:var(--color-neutral-600)">${navCount(n.view)}</span>
+      </button>`).join('')}
+    <div class="m-drawer-foot">
+      <span style="flex:1 1 100%">${esc(curAuthorName())}</span>
+      <a href="#" onclick="openSettings();return false">Settings</a>
+      <a href="#" onclick="doSignOut();return false">Sign out</a>
+    </div>
+  </nav>` : ''}`;
+}
 function sidebarHTML(){
   return `
-  <aside style="border-right:2px solid var(--color-divider);display:flex;flex-direction:column;padding:var(--space-4) 0">
+  <aside class="app-side" style="border-right:2px solid var(--color-divider);display:flex;flex-direction:column;padding:var(--space-4) 0">
     <div style="padding:0 var(--space-4) var(--space-4);border-bottom:2px solid var(--color-divider)">
       <img src="logo.png" alt="Teligen" style="height:40px;width:auto;display:block;margin-bottom:6px">
       <div style="font-size:11px;letter-spacing:0.1em;text-transform:uppercase;color:var(--color-accent)">Network API CRM</div>
@@ -492,7 +620,7 @@ function listPageHTML(){
   const chips = filterChips();
   const rows = viewRows();
   return `
-    <header style="display:flex;flex-wrap:wrap;align-items:flex-end;gap:var(--space-4);padding:var(--space-6) var(--space-6) var(--space-4);border-bottom:2px solid var(--color-divider)">
+    <header class="lp-head" style="display:flex;flex-wrap:wrap;align-items:flex-end;gap:var(--space-4);padding:var(--space-6) var(--space-6) var(--space-4);border-bottom:2px solid var(--color-divider)">
       <div style="flex:1 1 240px;min-width:200px">
         <div style="font-size:11px;letter-spacing:0.1em;text-transform:uppercase;color:var(--color-neutral-700)">${meta.kicker}</div>
         <h1 style="margin:4px 0 0;font-size:30px;line-height:1.05;letter-spacing:-0.02em">${meta.title}</h1>
@@ -509,15 +637,15 @@ function listPageHTML(){
       </div>
       ${S.view==='today' ? `<span style="font-size:12px;color:var(--color-neutral-700);max-width:150px;line-height:1.35">Follow-ups roll up from every relationship log.</span>` : ''}
       ${S.view==='coverage' ? `<button class="btn btn-secondary" onclick="exportCoverageExcel()">Export to Excel</button><button class="btn btn-primary" onclick="exportCoveragePDF()">Export to PDF</button>` : ''}
-      ${meta.recordWord ? `<button class="btn btn-primary" onclick="openNew('${S.view}')">New ${meta.recordWord}</button>` : ''}
+      ${meta.recordWord ? `<button class="btn btn-primary new-btn" onclick="openNew('${S.view}')">+ New ${meta.recordWord}</button>` : ''}
     </header>
     ${chips.length ? `
-    <div style="display:flex;flex-wrap:wrap;align-items:center;gap:var(--space-2);padding:var(--space-3) var(--space-6);border-bottom:1px solid var(--color-divider);min-height:52px">
+    <div class="chips-row" style="display:flex;flex-wrap:wrap;align-items:center;gap:var(--space-2);padding:var(--space-3) var(--space-6);border-bottom:1px solid var(--color-divider);min-height:52px">
       ${chips.map(c=>`<button class="chip ${S.filter===c.v?'on':''}" onclick="setFilter('${esc(c.v)}')">${esc(c.l)}</button>`).join('')}
       <span style="margin-left:auto;font-size:12px;color:var(--color-neutral-700)">${rows.count!=null?rows.count+' result'+(rows.count===1?'':'s'):''}</span>
     </div>` : ''}
     ${(S.view==='providers'||S.view==='coverage') ? `
-    <div style="display:flex;flex-wrap:wrap;align-items:center;gap:var(--space-2);padding:var(--space-2) var(--space-6);border-bottom:1px solid var(--color-divider)">
+    <div class="chips-row" style="display:flex;flex-wrap:wrap;align-items:center;gap:var(--space-2);padding:var(--space-2) var(--space-6);border-bottom:1px solid var(--color-divider)">
       <span style="font-size:11px;letter-spacing:0.08em;text-transform:uppercase;color:var(--color-neutral-700)">Provider status</span>
       ${PROVIDER_STATUSES.map(s=>`<button class="chip ${S.statusFilter.includes(s)?'on':''}" onclick="toggleStatusFilter('${esc(s)}')">${esc(s)}</button>`).join('')}
     </div>` : ''}
@@ -586,7 +714,7 @@ function todayHTML(){
         ${followsOthers.map(f=>{
           const due=dueInfo(f.followDate);
           return `
-          <div class="row-hit" onclick="openRecord('${f.type}','${f.rec.id}')" style="display:grid;grid-template-columns:168px minmax(0,1fr) auto;gap:var(--space-4);align-items:start;padding:var(--space-4) var(--space-3);border-top:1px solid var(--color-divider)">
+          <div class="row-hit fu-row" onclick="openRecord('${f.type}','${f.rec.id}')" style="display:grid;grid-template-columns:168px minmax(0,1fr) auto;gap:var(--space-4);align-items:start;padding:var(--space-4) var(--space-3);border-top:1px solid var(--color-divider)">
             <div style="display:grid;gap:4px" onclick="event.stopPropagation()">
               <span class="${due.cls}">${due.label}</span>
               <input type="date" class="input" style="width:auto;padding:2px 6px;font-size:12px;font-variant-numeric:tabular-nums" value="${esc(f.followDate)}" onchange="updateFollowDate('${f.id}',this.value)">
@@ -601,7 +729,7 @@ function todayHTML(){
               <p style="margin:5px 0 0;font-size:14px;line-height:1.5">${esc(f.text)}</p>
               <div style="font-size:11px;color:var(--color-neutral-600);margin-top:4px">Logged by ${esc(f.author)} · ${relTime(f.createdAt)}</div>
             </div>
-            <div style="display:grid;gap:4px;justify-items:stretch" onclick="event.stopPropagation()">
+            <div class="fu-actions" style="display:grid;gap:4px;justify-items:stretch" onclick="event.stopPropagation()">
               <button class="btn btn-secondary" onclick="markDone('${f.type}','${f.rec.id}','${f.id}')">Mark done</button>
               <button class="btn btn-ghost" onclick="openRecord('${f.type}','${f.rec.id}','${f.id}')">Log outcome</button>
             </div>
@@ -635,7 +763,7 @@ function todayHTML(){
             ${followsProspects.map(f=>{
               const due=dueInfo(f.followDate);
               return `
-              <div class="row-hit" onclick="openRecord('${f.type}','${f.rec.id}')" style="display:grid;grid-template-columns:168px minmax(0,1fr) auto;gap:var(--space-4);align-items:start;padding:var(--space-4) var(--space-3);border-top:1px solid var(--color-divider)">
+              <div class="row-hit fu-row" onclick="openRecord('${f.type}','${f.rec.id}')" style="display:grid;grid-template-columns:168px minmax(0,1fr) auto;gap:var(--space-4);align-items:start;padding:var(--space-4) var(--space-3);border-top:1px solid var(--color-divider)">
                 <div style="display:grid;gap:4px" onclick="event.stopPropagation()">
                   <span class="${due.cls}">${due.label}</span>
                   <input type="date" class="input" style="width:auto;padding:2px 6px;font-size:12px;font-variant-numeric:tabular-nums" value="${esc(f.followDate)}" onchange="updateFollowDate('${f.id}',this.value)">
@@ -649,7 +777,7 @@ function todayHTML(){
                   <p style="margin:5px 0 0;font-size:14px;line-height:1.5">${esc(f.text)}</p>
                   <div style="font-size:11px;color:var(--color-neutral-600);margin-top:4px">Logged by ${esc(f.author)} · ${relTime(f.createdAt)}</div>
                 </div>
-                <div style="display:grid;gap:4px;justify-items:stretch" onclick="event.stopPropagation()">
+                <div class="fu-actions" style="display:grid;gap:4px;justify-items:stretch" onclick="event.stopPropagation()">
                   <button class="btn btn-secondary" onclick="markDone('${f.type}','${f.rec.id}','${f.id}')">Mark done</button>
                   <button class="btn btn-ghost" onclick="openRecord('${f.type}','${f.rec.id}','${f.id}')">Log outcome</button>
                 </div>
@@ -819,7 +947,7 @@ function tableRows_coverage(){
         const showCountry = r.country!==lastCountry; lastCountry=r.country;
         return `
         <tr class="row-hit" onclick="openRecord('providers','${r.provider.id}')">
-          <td style="font-weight:${showCountry?600:400}">${showCountry?esc(r.country):''}</td>
+          <td class="${showCountry?'':'cc-dupe'}" style="font-weight:${showCountry?600:400}"><span class="cc-text">${esc(r.country)}</span></td>
           <td style="font-weight:600">${esc(r.operator)}</td>
           <td style="color:var(--color-neutral-700)">${esc(r.provider.name)} <span class="tag ${r.provider.kind==='Wholesale'?'tag-neutral':'tag-outline'}">${r.provider.kind==='Wholesale'?'Wholesale':'MNO'}</span>${r.provider.status!=='Live'?` <span class="${statusTagCls(r.provider.status)}" title="Provider integration status">${esc(r.provider.status)}</span>`:''}</td>
           ${r.apiFlags.map(f=>{const c=apiCell(f);return `<td><span class="${c.cls}">${c.label}</span></td>`}).join('')}
@@ -1084,14 +1212,14 @@ function recordPageHTML(){
   return `
   <div style="flex:1;overflow:auto">
     <header style="padding:var(--space-6) var(--space-6) var(--space-4);border-bottom:2px solid var(--color-divider)">
-      <div style="display:flex;align-items:center;gap:6px;font-size:11px;letter-spacing:0.1em;text-transform:uppercase">
+      <div class="rec-crumb" style="display:flex;align-items:center;gap:6px;font-size:11px;letter-spacing:0.1em;text-transform:uppercase">
         <button onclick="closeRecord()" style="all:unset;cursor:pointer;color:var(--color-neutral-700);letter-spacing:0.1em">${TYPE_LABEL[type]}s</button>
         <span style="color:var(--color-neutral-500)">/</span>
         <span style="color:var(--color-accent)">${esc(rec.name)}</span>
       </div>
       <div style="display:flex;flex-wrap:wrap;align-items:flex-end;gap:var(--space-4);margin-top:var(--space-2)">
         <div style="flex:1;min-width:0">
-          <h1 style="margin:0;font-size:44px;line-height:1;letter-spacing:-0.03em">${esc(rec.name)}</h1>
+          <h1 class="rec-title" style="margin:0;font-size:44px;line-height:1;letter-spacing:-0.03em">${esc(rec.name)}</h1>
           <div style="display:flex;flex-wrap:wrap;align-items:center;gap:var(--space-3);margin-top:var(--space-3);font-size:13px">
             <span class="tag tag-accent">${esc(recordBadge1(type,rec)||'')}</span>
             <span style="color:var(--color-neutral-700)">${esc(recordCountryLabel(type, rec))}</span>
@@ -1104,7 +1232,7 @@ function recordPageHTML(){
             </span>
           </div>
         </div>
-        <div style="display:flex;gap:var(--space-2);align-items:center">
+        <div class="rec-actions" style="display:flex;gap:var(--space-2);align-items:center">
           <button class="btn btn-ghost" onclick="deleteRecord()" style="color:var(--color-neutral-700)">Delete</button>
           ${type==='prospects' ? `<button class="btn btn-secondary" onclick="openInstantlySync()">Sync to Instantly</button>` : ''}
           ${type==='prospects' ? `<button class="btn btn-secondary" onclick="convertProspect()">Convert to Lead</button>` : ''}
@@ -1114,7 +1242,7 @@ function recordPageHTML(){
         </div>
       </div>
     </header>
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));border-bottom:2px solid var(--color-divider)">
+    <div class="rec-stats" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));border-bottom:2px solid var(--color-divider)">
       ${stats.map(s=>`
         <div style="padding:var(--space-4) var(--space-6);border-right:1px solid var(--color-divider)">
           <div style="font-size:11px;letter-spacing:0.1em;text-transform:uppercase;color:var(--color-neutral-700)">${s.k}</div>
@@ -1122,7 +1250,7 @@ function recordPageHTML(){
         </div>`).join('')}
     </div>
     <div style="display:flex;flex-wrap:wrap;align-items:stretch">
-      <aside style="order:2;flex:1 1 320px;max-width:380px;min-width:300px;border-left:2px solid var(--color-divider)">
+      <aside class="rec-aside" style="order:2;flex:1 1 320px;max-width:380px;min-width:300px;border-left:2px solid var(--color-divider)">
         <div style="padding:var(--space-4) var(--space-6) var(--space-2)">
           <div style="display:flex;align-items:baseline;gap:var(--space-2);cursor:pointer" onclick="toggleContactsOpen()">
             <span style="font-size:10px;color:var(--color-neutral-700);width:10px">${S.contactsOpen?'▾':'▸'}</span>
@@ -1171,7 +1299,7 @@ function providerCoverageHTML(rec){
       <button class="btn btn-secondary" style="margin-left:auto" onclick="openEdit('coverage')">Manage</button>
     </div>
     <div style="overflow-x:auto;min-width:0;margin-top:var(--space-3)">
-      <table class="table"><thead><tr><th>Country</th><th>Operator / network</th>${APIS.map(a=>`<th>${a}</th>`).join('')}</tr></thead><tbody>
+      <table class="table table-matrix"><thead><tr><th>Country</th><th>Operator / network</th>${APIS.map(a=>`<th>${a}</th>`).join('')}</tr></thead><tbody>
         ${rows.map(r=>`<tr><td style="font-weight:600">${esc(r.country)}</td><td style="color:var(--color-neutral-700)">${esc(r.operator)}</td>
           ${normFlags(r).map(f=>{const c=apiCell(f);return `<td><span class="${c.cls}">${c.label}</span></td>`}).join('')}</tr>`).join('')}
       </tbody></table>
@@ -1218,7 +1346,7 @@ function partnerIntrosHTML(rec){
       <button class="btn btn-secondary" style="margin-left:auto" onclick="openEdit('intros')">Manage</button>
     </div>
     <div style="overflow-x:auto;min-width:0;margin-top:var(--space-3)">
-    <table class="table"><thead><tr><th>Company</th><th>Side</th><th>Country</th><th>Industry / type</th><th>Stage</th></tr></thead><tbody>
+    <table class="table table-matrix"><thead><tr><th>Company</th><th>Side</th><th>Country</th><th>Industry / type</th><th>Stage</th></tr></thead><tbody>
       ${rows.map(r=>`<tr>
         <td><div style="font-weight:600">${esc(r.name)}</div><div style="font-size:12px;color:var(--color-neutral-700);font-weight:400;max-width:320px">${esc(r.note||'')}</div></td>
         <td><span class="tag ${r.side==='Provider'?'tag-outline':'tag-neutral'}">${esc(r.side)}</span></td>
@@ -1288,7 +1416,7 @@ function logSectionHTML(type, rec){
             ${due?`<span class="${due.cls}">Follow up</span><input type="date" class="input" style="width:auto;padding:2px 6px;font-size:12px" value="${esc(e.followDate)}" onchange="updateFollowDate('${e.id}',this.value)"><span style="font-size:12px;color:var(--color-neutral-700)">${due.label}</span>`:''}
             ${e.followDone && e.closedOn?`<span class="tag tag-neutral">Closed ${esc(e.closedOn)}</span>`:''}
           </div>
-          <p style="margin:6px 0 0;font-size:14px;line-height:1.5">${esc(e.text)}</p>
+          <p class="log-text" style="margin:6px 0 0;font-size:14px;line-height:1.5">${esc(e.text)}</p>
           ${canAct?`
             <div style="display:flex;flex-wrap:wrap;gap:var(--space-2);margin-top:var(--space-2)">
               <button class="btn btn-secondary" onclick="markDone('${type}','${rec.id}','${e.id}')">Mark done</button>
@@ -1360,8 +1488,8 @@ function editModalHTML(){
   const focus = S.editFocus;
   const title = focus==='contacts' ? 'Contacts' : focus==='coverage' ? 'Coverage' : focus==='intros' ? 'Prospects they can introduce' : focus==='countries' ? 'Countries of interest' : focus==='interests' ? 'APIs of interest' : `Edit ${TYPE_LABEL[type]}`;
   return `
-  <div style="position:fixed;inset:0;background:color-mix(in srgb,#201e1d 45%,transparent);display:flex;align-items:flex-start;justify-content:center;padding:var(--space-8) var(--space-4);overflow:auto" onclick="closeEdit()">
-    <section onclick="event.stopPropagation()" class="elev-lg" style="width:720px;max-width:100%;background:var(--color-bg);border:2px solid var(--color-divider)">
+  <div class="modal-wrap" style="position:fixed;inset:0;background:color-mix(in srgb,#201e1d 45%,transparent);display:flex;align-items:flex-start;justify-content:center;padding:var(--space-8) var(--space-4);overflow:auto" onclick="closeEdit()">
+    <section onclick="event.stopPropagation()" class="elev-lg modal-card" style="width:720px;max-width:100%;background:var(--color-bg);border:2px solid var(--color-divider)">
       <header style="display:flex;align-items:center;gap:var(--space-4);padding:var(--space-4) var(--space-6);border-bottom:2px solid var(--color-divider)">
         <h3 style="margin:0;font-size:22px;letter-spacing:-0.01em;flex:1">${title}</h3>
         <button class="btn btn-secondary" onclick="closeEdit()">Cancel</button>
@@ -1520,8 +1648,8 @@ function newModalHTML(){
   const type = S.newForm.__type;
   const fields = newFieldsFor(type);
   return `
-  <div style="position:fixed;inset:0;background:color-mix(in srgb,#201e1d 45%,transparent);display:flex;align-items:center;justify-content:center;padding:var(--space-4)" onclick="closeNew()">
-    <section onclick="event.stopPropagation()" class="elev-lg" style="width:480px;max-width:100%;background:var(--color-bg);border:2px solid var(--color-divider)">
+  <div class="modal-wrap" style="position:fixed;inset:0;background:color-mix(in srgb,#201e1d 45%,transparent);display:flex;align-items:center;justify-content:center;padding:var(--space-4)" onclick="closeNew()">
+    <section onclick="event.stopPropagation()" class="elev-lg modal-card" style="width:480px;max-width:100%;background:var(--color-bg);border:2px solid var(--color-divider)">
       <header style="display:flex;align-items:center;gap:var(--space-4);padding:var(--space-4) var(--space-6);border-bottom:2px solid var(--color-divider)">
         <h3 style="margin:0;font-size:22px;letter-spacing:-0.01em;flex:1">New ${TYPE_LABEL[type]}</h3>
         <button class="btn btn-secondary" onclick="closeNew()">Cancel</button>
@@ -1550,8 +1678,8 @@ function instantlySyncModalHTML(){
   const rec = recordOf(type,id);
   const contact = rec && (rec.contacts||[])[0];
   return `
-  <div style="position:fixed;inset:0;background:color-mix(in srgb,#201e1d 45%,transparent);display:flex;align-items:center;justify-content:center;padding:var(--space-4)" onclick="closeInstantlySync()">
-    <section onclick="event.stopPropagation()" class="elev-lg" style="width:480px;max-width:100%;background:var(--color-bg);border:2px solid var(--color-divider)">
+  <div class="modal-wrap" style="position:fixed;inset:0;background:color-mix(in srgb,#201e1d 45%,transparent);display:flex;align-items:center;justify-content:center;padding:var(--space-4)" onclick="closeInstantlySync()">
+    <section onclick="event.stopPropagation()" class="elev-lg modal-card" style="width:480px;max-width:100%;background:var(--color-bg);border:2px solid var(--color-divider)">
       <header style="display:flex;align-items:center;gap:var(--space-4);padding:var(--space-4) var(--space-6);border-bottom:2px solid var(--color-divider)">
         <h3 style="margin:0;font-size:22px;letter-spacing:-0.01em;flex:1">Sync to Instantly</h3>
         <button class="btn btn-secondary" onclick="closeInstantlySync()">Cancel</button>
@@ -1592,7 +1720,7 @@ function settingsPageHTML(){
   if(!S.settingsForm) S.settingsForm = { apis:[...APIS], team: TEAM_MEMBERS.map(m=>({...m})) };
   const f = S.settingsForm;
   return `
-    <header style="display:flex;flex-wrap:wrap;align-items:flex-end;gap:var(--space-4);padding:var(--space-6) var(--space-6) var(--space-4);border-bottom:2px solid var(--color-divider)">
+    <header class="lp-head" style="display:flex;flex-wrap:wrap;align-items:flex-end;gap:var(--space-4);padding:var(--space-6) var(--space-6) var(--space-4);border-bottom:2px solid var(--color-divider)">
       <div style="flex:1 1 240px;min-width:200px">
         <div style="font-size:11px;letter-spacing:0.1em;text-transform:uppercase;color:var(--color-neutral-700)">Configuration</div>
         <h1 style="margin:4px 0 0;font-size:30px;line-height:1.05;letter-spacing:-0.02em">Settings</h1>
@@ -1629,7 +1757,8 @@ function settingsPageHTML(){
     </div>
   `;
 }
-window.nav = function(view){ S.view=view; S.filter='all'; S.q=''; S.selected=null; location.hash = '#/'+view; render(); };
+window.nav = function(view){ S.view=view; S.filter='all'; S.q=''; S.selected=null; S.navOpen=false; location.hash = '#/'+view; render(); window.scrollTo(0,0); };
+window.toggleNav = function(){ S.navOpen = !S.navOpen; render(); };
 window.setSearch = function(v){ S.q=v; render(); };
 window.setOwnerFilter = function(v){ S.ownerFilter=v; render(); };
 window.setFilter = function(v){ S.filter=v; render(); };
@@ -1648,10 +1777,11 @@ window.toggleStatusFilter = function(status){
 };
 
 window.openRecord = function(type,id,jumpToEntryId){
-  S.selected = {type,id}; S.logTab='All'; S.replyTo=null;
+  S.selected = {type,id}; S.logTab='All'; S.replyTo=null; S.navOpen=false;
   S.contactsOpen = false; S.documentsOpen = false;
   location.hash = '#/'+type+'/'+id;
   render();
+  window.scrollTo(0,0);
   if(jumpToEntryId){ setTimeout(()=>window.startReply(jumpToEntryId), 0); }
 };
 window.closeRecord = function(){ const t=S.selected?S.selected.type:S.view; S.selected=null; location.hash='#/'+t; render(); };
@@ -2221,7 +2351,7 @@ window.doSignOut = async function(){
 
 // ── Settings actions ───────────────────────────────────────────────────
 window.openSettings = function(){
-  S.selected = null;
+  S.selected = null; S.navOpen = false;
   S.view = 'settings';
   S.settingsForm = { apis:[...APIS], team: TEAM_MEMBERS.map(m=>({...m})) };
   location.hash = '#/settings';

@@ -152,6 +152,21 @@ lineup changes — no code deploy needed for either.
 10. **Edit modal** — per-type fields, plus a coverage editor (a status dropdown per API per market row — see `MARKET_STATUSES`) for providers, intros editor for partners, contacts editor for all types.
 11. **Settings** — separate from the main views (sidebar footer link, not in `NAV`) — edits `settings/config` (see above).
 
+## Phone layout
+Under 760px wide (`@media (max-width: 760px)` in the first `<style>` of `index.html`)
+the desktop sidebar is replaced by a sticky top bar (`mobileBarHTML()`): logo + section
+title with a Menu button that opens a full-width drawer (`S.navOpen`), or a "‹ Leads"
+back link while a record is open. The layout is inline-styled throughout, so the phone
+CSS works by (a) redefining `--space-6`/`--space-8` (every inline gutter uses them),
+(b) structural classes (`app-shell`, `lp-head`, `chips-row`, `fu-row`, `rec-*`,
+`modal-wrap`/`modal-card`) and (c) `!important` overrides for the few fixed desktop
+widths. Tables become stacked cards: `labelTables()` (called from `render()`) copies each
+`<th>` onto its `<td>` as `data-label` and tags `—` cells `data-empty` so they're hidden;
+matrix-style tables opt out with `class="table table-matrix"` and scroll sideways.
+Modals go full-screen with a sticky header; "+ New X" becomes a floating button; inputs
+are 16px so iOS doesn't zoom. Test by setting the browser pane to 375px wide in DEMO_MODE;
+anything new with a fixed pixel width or a multi-column inline grid needs a class here.
+
 ## Instantly integration (live)
 Uploads Prospects to Instantly for intro-email campaigns, and imports all email
 communication to/from `SYNCED_EACCOUNTS` (`functions/index.js` —
