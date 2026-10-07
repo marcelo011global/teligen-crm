@@ -344,9 +344,11 @@ exports.syncInstantlyLeadsToProspects = onSchedule(
 // One-time setup (Gmail API on, Token Creator on the runtime SA, domain-wide delegation of
 // its client ID with the gmail.readonly scope in each Workspace admin console) is in CLAUDE.md.
 // guillermo@011global.com is the same inbox (alias) as guillermo@teligen.io -- scanning both only re-reads it.
-const GMAIL_MAILBOXES = ['guillermo@teligen.io', 'marcelo@011global.com', 'marcelo@teligen.io'];
+// marcelo@teligen.io is the same inbox as marcelo@011global.com (identical message counts), so only one is scanned.
+const GMAIL_MAILBOXES = ['guillermo@teligen.io', 'marcelo@011global.com'];
 const GMAIL_INITIAL_LOOKBACK_DAYS = 90;
-const GMAIL_MAX_MESSAGES_PER_MAILBOX_PER_RUN = 400;
+const GMAIL_MAX_MESSAGES_PER_MAILBOX_PER_RUN = 1500;
+const GMAIL_CONCURRENCY = 5;
 const GMAIL_SCOPE = 'https://www.googleapis.com/auth/gmail.readonly';
 const METADATA = 'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default';
 
@@ -373,9 +375,12 @@ async function getDelegatedGmailToken(subject) {
 }
 
 async function gmailGet(token, path) {
-  const res = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/${path}`, {headers: {Authorization: `Bearer ${token}`}});
-  if (!res.ok) throw new Error(`Gmail ${path.split('?')[0]} failed (${res.status}): ${(await res.text()).slice(0, 300)}`);
-  return res.json();
+  for (let attempt = 0; ; attempt++) {
+    const res = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/${path}`, {headers: {Authorization: `Bearer ${token}`}});
+    if (res.ok) return res.json();
+    if ((res.status === 429 || res.status >= 500) && attempt < 3) { await new Promise(r => setTimeout(r, 1000 * 2 ** attempt)); continue; }
+    throw new Error(`Gmail ${path.split('?')[0]} failed (${res.status}): ${(await res.text()).slice(0, 300)}`);
+  }
 }
 
 function decodeMimeWords(s) {
@@ -411,12 +416,12 @@ async function syncOneMailbox(mailbox, byEmail, cursorState) {
   ids.reverse(); // list is newest-first; process oldest-first so the cursor only ever moves forward over fully-handled mail
 
   let handled = 0, logged = 0, maxMs = sinceMs;
-  for (const id of ids.slice(0, GMAIL_MAX_MESSAGES_PER_MAILBOX_PER_RUN)) {
+  const processOne = async (id) => {
     const msg = await gmailGet(token, `messages/${id}?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Cc&metadataHeaders=Bcc&metadataHeaders=Subject&metadataHeaders=Message-ID`);
     handled++;
     const internalMs = Number(msg.internalDate) || 0;
     if (internalMs > maxMs) maxMs = internalMs;
-    if ((msg.labelIds || []).includes('DRAFT')) continue;
+    if ((msg.labelIds || []).includes('DRAFT')) return;
 
     const fromHeader = headerOf(msg, 'From');
     const fromAddr = ((fromHeader.match(EMAIL_RE) || [])[0] || '').toLowerCase();
@@ -424,14 +429,14 @@ async function syncOneMailbox(mailbox, byEmail, cursorState) {
       .flatMap(h => (h.match(EMAIL_RE) || []).map(a => a.toLowerCase()))
       .filter(a => a !== mailboxLower && !SYNCED_EACCOUNTS_LOWER.includes(a));
     const matchAddr = others.find(a => byEmail.has(a));
-    if (!matchAddr) continue;
+    if (!matchAddr) return;
     const match = byEmail.get(matchAddr);
 
     const emailMessageId = normMessageId(headerOf(msg, 'Message-ID'));
     const dupQuery = emailMessageId
       ? db.collection('logEntries').where('emailMessageId', '==', emailMessageId)
       : db.collection('logEntries').where('gmailId', '==', `${mailbox}:${id}`);
-    if (!(await dupQuery.limit(1).get()).empty) continue;
+    if (!(await dupQuery.limit(1).get()).empty) return;
 
     const sent = fromAddr === mailboxLower || (msg.labelIds || []).includes('SENT');
     const subject = decodeMimeWords(headerOf(msg, 'Subject')) || '(no subject)';
@@ -456,6 +461,13 @@ async function syncOneMailbox(mailbox, byEmail, cursorState) {
       createdAt: new Date(internalMs || Date.now()).toISOString(),
     });
     logged++;
+  };
+  // Small parallel batches (Gmail allows ~250 quota units/sec/user; a metadata get is 5) so a
+  // new mailbox's backlog clears in a few runs instead of hours. Batches finish in order, so
+  // the cursor still only moves over fully-handled mail.
+  const batch = ids.slice(0, GMAIL_MAX_MESSAGES_PER_MAILBOX_PER_RUN);
+  for (let i = 0; i < batch.length; i += GMAIL_CONCURRENCY) {
+    await Promise.all(batch.slice(i, i + GMAIL_CONCURRENCY).map(processOne));
   }
   return {handled, logged, total: ids.length, lastInternalMs: maxMs};
 }
