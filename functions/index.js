@@ -173,9 +173,20 @@ function matchEmailToRecord(email, byEmail) {
   return null;
 }
 
+// RFC Message-ID, normalised -- the same email has the same one in Instantly, in
+// every Gmail mailbox it passed through, so it's the cross-source dedupe key.
+function normMessageId(id) {
+  return String(id || '').trim().replace(/^<|>$/g, '').toLowerCase();
+}
+
 async function writeLogEntryIfNew(email, match) {
   const existing = await db.collection('logEntries').where('instantlyId', '==', email.id).limit(1).get();
   if (!existing.empty) return;
+  const emailMessageId = normMessageId(email.message_id);
+  if (emailMessageId) {
+    const dup = await db.collection('logEntries').where('emailMessageId', '==', emailMessageId).limit(1).get();
+    if (!dup.empty) return;
+  }
 
   const received = email.email_type === 'received';
   const counterpart = received ? email.from_address_email : email.to_address_email_list;
@@ -196,6 +207,7 @@ async function writeLogEntryIfNew(email, match) {
     followDone: false,
     closedOn: null,
     instantlyId: email.id,
+    emailMessageId,
     createdAt: new Date(email.timestamp_email || email.timestamp_created).toISOString(),
   });
 }
@@ -320,5 +332,151 @@ exports.syncInstantlyLeadsToProspects = onSchedule(
     }
 
     console.log(`syncInstantlyLeadsToProspects: created ${created} new prospect(s) from ${campaigns.length} Teligen campaign(s)`);
+  }
+);
+
+// ── Gmail sync ──────────────────────────────────────────────────────────────
+// Logs the team's own 1:1 email (not just Instantly campaign mail) onto the matching
+// record. Keyless domain-wide delegation: the function's runtime service account signs a
+// JWT (IAM Credentials API) naming the mailbox as `sub`, and exchanges it for a read-only
+// Gmail token. Only messages whose from/to/cc matches a CRM contact are stored, and only
+// the headers + Gmail's ~200-char snippet -- never the full body, never unmatched mail.
+// One-time setup (Gmail API on, Token Creator on the runtime SA, domain-wide delegation of
+// its client ID with the gmail.readonly scope in each Workspace admin console) is in CLAUDE.md.
+const GMAIL_MAILBOXES = ['guillermo@teligen.io', 'guillermo@011global.com'];
+const GMAIL_INITIAL_LOOKBACK_DAYS = 90;
+const GMAIL_MAX_MESSAGES_PER_MAILBOX_PER_RUN = 400;
+const GMAIL_SCOPE = 'https://www.googleapis.com/auth/gmail.readonly';
+const METADATA = 'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default';
+
+async function getDelegatedGmailToken(subject) {
+  const mdHeaders = {'Metadata-Flavor': 'Google'};
+  const saEmail = await (await fetch(`${METADATA}/email`, {headers: mdHeaders})).text();
+  const own = await (await fetch(`${METADATA}/token`, {headers: mdHeaders})).json();
+  const iat = Math.floor(Date.now() / 1000);
+  const claims = {iss: saEmail, sub: subject, scope: GMAIL_SCOPE, aud: 'https://oauth2.googleapis.com/token', iat, exp: iat + 3000};
+  const signRes = await fetch(`https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/${encodeURIComponent(saEmail)}:signJwt`, {
+    method: 'POST',
+    headers: {Authorization: `Bearer ${own.access_token}`, 'Content-Type': 'application/json'},
+    body: JSON.stringify({payload: JSON.stringify(claims)}),
+  });
+  if (!signRes.ok) throw new Error(`signJwt failed (${signRes.status}): ${(await signRes.text()).slice(0, 300)}`);
+  const {signedJwt} = await signRes.json();
+  const tokRes = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+    body: new URLSearchParams({grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer', assertion: signedJwt}),
+  });
+  if (!tokRes.ok) throw new Error(`token exchange for ${subject} failed (${tokRes.status}): ${(await tokRes.text()).slice(0, 300)} -- is domain-wide delegation authorized for this domain?`);
+  return (await tokRes.json()).access_token;
+}
+
+async function gmailGet(token, path) {
+  const res = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/${path}`, {headers: {Authorization: `Bearer ${token}`}});
+  if (!res.ok) throw new Error(`Gmail ${path.split('?')[0]} failed (${res.status}): ${(await res.text()).slice(0, 300)}`);
+  return res.json();
+}
+
+function decodeMimeWords(s) {
+  return String(s || '').replace(/=\?([^?]+)\?([bBqQ])\?([^?]*)\?=/g, (m, cs, enc, txt) => {
+    try {
+      if (enc.toUpperCase() === 'B') return Buffer.from(txt, 'base64').toString('utf8');
+      return Buffer.from(txt.replace(/_/g, ' ').replace(/=([0-9A-F]{2})/gi, (x, h) => String.fromCharCode(parseInt(h, 16))), 'latin1').toString('utf8');
+    } catch (e) { return m; }
+  });
+}
+function decodeEntities(s) {
+  return String(s || '').replace(/&#39;/g, "'").replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+}
+const EMAIL_RE = /[A-Z0-9._%+'-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi;
+function headerOf(msg, name) {
+  const h = ((msg.payload && msg.payload.headers) || []).find(x => x.name.toLowerCase() === name.toLowerCase());
+  return h ? h.value : '';
+}
+
+async function syncOneMailbox(mailbox, byEmail, cursorState) {
+  const token = await getDelegatedGmailToken(mailbox);
+  const mailboxLower = mailbox.toLowerCase();
+  const sinceMs = cursorState.lastInternalMs || (Date.now() - GMAIL_INITIAL_LOOKBACK_DAYS * 86400000);
+  const q = `after:${Math.max(0, Math.floor(sinceMs / 1000) - 1)}`; // -1s: boundary overlap is absorbed by the Message-ID dedupe
+
+  const ids = [];
+  let pageToken;
+  do {
+    const data = await gmailGet(token, `messages?q=${encodeURIComponent(q)}&maxResults=500${pageToken ? `&pageToken=${pageToken}` : ''}`);
+    for (const m of (data.messages || [])) ids.push(m.id);
+    pageToken = data.nextPageToken;
+  } while (pageToken && ids.length < 5000);
+  ids.reverse(); // list is newest-first; process oldest-first so the cursor only ever moves forward over fully-handled mail
+
+  let handled = 0, logged = 0, maxMs = sinceMs;
+  for (const id of ids.slice(0, GMAIL_MAX_MESSAGES_PER_MAILBOX_PER_RUN)) {
+    const msg = await gmailGet(token, `messages/${id}?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Cc&metadataHeaders=Bcc&metadataHeaders=Subject&metadataHeaders=Message-ID`);
+    handled++;
+    const internalMs = Number(msg.internalDate) || 0;
+    if (internalMs > maxMs) maxMs = internalMs;
+    if ((msg.labelIds || []).includes('DRAFT')) continue;
+
+    const fromHeader = headerOf(msg, 'From');
+    const fromAddr = ((fromHeader.match(EMAIL_RE) || [])[0] || '').toLowerCase();
+    const others = [fromHeader, headerOf(msg, 'To'), headerOf(msg, 'Cc'), headerOf(msg, 'Bcc')]
+      .flatMap(h => (h.match(EMAIL_RE) || []).map(a => a.toLowerCase()))
+      .filter(a => a !== mailboxLower && !SYNCED_EACCOUNTS_LOWER.includes(a));
+    const matchAddr = others.find(a => byEmail.has(a));
+    if (!matchAddr) continue;
+    const match = byEmail.get(matchAddr);
+
+    const emailMessageId = normMessageId(headerOf(msg, 'Message-ID'));
+    const dupQuery = emailMessageId
+      ? db.collection('logEntries').where('emailMessageId', '==', emailMessageId)
+      : db.collection('logEntries').where('gmailId', '==', `${mailbox}:${id}`);
+    if (!(await dupQuery.limit(1).get()).empty) continue;
+
+    const sent = fromAddr === mailboxLower || (msg.labelIds || []).includes('SENT');
+    const subject = decodeMimeWords(headerOf(msg, 'Subject')) || '(no subject)';
+    const snippet = decodeEntities(msg.snippet || '').trim();
+    const counterpart = sent ? decodeMimeWords(headerOf(msg, 'To')) || matchAddr : decodeMimeWords(fromHeader) || matchAddr;
+    const author = sent ? mailbox : (decodeMimeWords(fromHeader).replace(/<[^>]*>/g, '').replace(/"/g, '').trim() || matchAddr);
+    await db.collection('logEntries').add({
+      recordType: match.type,
+      recordId: match.id,
+      parentId: null,
+      kind: 'Email',
+      author,
+      initials: initialsFrom(author),
+      text: `${sent ? 'Sent to' : 'Received from'} ${counterpart} — ${subject}${snippet ? `\n\n${snippet}` : ''}`,
+      follow: false,
+      followDate: null,
+      followDone: false,
+      closedOn: null,
+      emailMessageId,
+      gmailId: `${mailbox}:${id}`,
+      mailbox,
+      createdAt: new Date(internalMs || Date.now()).toISOString(),
+    });
+    logged++;
+  }
+  return {handled, logged, total: ids.length, lastInternalMs: maxMs};
+}
+
+exports.syncGmailMessages = onSchedule(
+  {schedule: 'every 30 minutes', timeoutSeconds: 540, memory: '512MiB'},
+  async () => {
+    const cursorRef = db.collection('settings').doc('gmailSync');
+    const cursorSnap = await cursorRef.get();
+    const state = (cursorSnap.exists && cursorSnap.data().mailboxes) || {};
+    const byEmail = await buildEmailIndex();
+
+    for (const mailbox of GMAIL_MAILBOXES) {
+      const key = mailbox.replace(/[.@]/g, '_');
+      try {
+        const r = await syncOneMailbox(mailbox, byEmail, state[key] || {});
+        await cursorRef.set({mailboxes: {[key]: {mailbox, lastInternalMs: r.lastInternalMs, lastRunAt: new Date().toISOString(), lastHandled: r.handled, lastLogged: r.logged, lastError: null}}}, {merge: true});
+        console.log(`syncGmailMessages: ${mailbox} — scanned ${r.handled}/${r.total}, logged ${r.logged}`);
+      } catch (e) {
+        console.error(`syncGmailMessages: ${mailbox} failed:`, e.message || e);
+        await cursorRef.set({mailboxes: {[key]: {mailbox, lastRunAt: new Date().toISOString(), lastError: String(e.message || e).slice(0, 500)}}}, {merge: true});
+      }
+    }
   }
 );

@@ -206,6 +206,30 @@ entries. Deployed to the `teligen-crm` Firebase project, region `us-central1`.
   No time-based cursor (the list-leads endpoint has none to filter by), so
   every run re-scans full campaigns; cost is one dedupe-map lookup per lead,
   capped at 20 pages (2000 leads) per campaign per run.
+- **`syncGmailMessages`** (scheduled, every 30 min) — logs the team's own 1:1
+  email (not just Instantly campaign mail) onto the matching record. Reads each
+  mailbox in `GMAIL_MAILBOXES` (`functions/index.js`) via the Gmail API with
+  **keyless domain-wide delegation**: the runtime service account
+  (`94705401144-compute@developer.gserviceaccount.com`) signs a JWT through the
+  IAM Credentials API with the mailbox as `sub`, exchanged for a `gmail.readonly`
+  token. Only messages whose from/to/cc matches a CRM contact (`buildEmailIndex()`)
+  are stored, and only headers + Gmail's ~200-char snippet — never full bodies,
+  never unmatched mail. Dedupes across sources and mailboxes on the RFC
+  `Message-ID` (`emailMessageId` on the log entry — `syncInstantlyEmails` writes it
+  too), so a mail seen in Instantly and in two Gmail inboxes logs once. Cursor per
+  mailbox in `settings/gmailSync` (first run looks back
+  `GMAIL_INITIAL_LOOKBACK_DAYS`=90; 400 messages/mailbox/run cap, catches up over
+  runs); a mailbox that fails (e.g. delegation not yet authorized) records
+  `lastError` there and doesn't block the others. **One-time setup per environment:**
+  (1) enable the *Gmail API* and *IAM Service Account Credentials API* on the
+  `teligen-crm` project; (2) give that runtime service account the *Service Account
+  Token Creator* role **on itself**; (3) in each Workspace admin console
+  (admin.google.com → Security → API controls → Domain-wide delegation) add the
+  service account's numeric Client ID with scope
+  `https://www.googleapis.com/auth/gmail.readonly` — once per domain
+  (`teligen.io` and `011global.com` may be separate Workspace accounts with
+  different admins). Anyone signed into the CRM can read the logged entries, so
+  this makes a mailbox owner's 1:1 mail with CRM contacts team-visible.
 - **Local tooling note**: this machine's global npm cache is broken and the
   global install path needs sudo, so there's no bare `firebase` command —
   every Firebase CLI call goes through
