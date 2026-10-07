@@ -11,7 +11,7 @@ const INSTANTLY_API_KEY = defineSecret('INSTANTLY_API_KEY');
 const INSTANTLY_BASE = 'https://api.instantly.ai/api/v2';
 const ALLOWED_DOMAINS = ['011global.com', '011telecom.com'];
 // Instantly mailboxes whose sent/received mail gets imported into the CRM.
-const SYNCED_EACCOUNTS = ['michael@teligenlabs.com', 'guillermo@teligen.io'];
+const SYNCED_EACCOUNTS = ['michael@teligenlabs.com', 'guillermo@teligen.io', 'guillermo@011global.com'];
 // Only Instantly campaigns whose name matches this are ever surfaced to the CRM —
 // the workspace has campaigns for other companies too.
 const CAMPAIGN_NAME_FILTER = /teligen/i;
