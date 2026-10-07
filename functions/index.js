@@ -343,7 +343,8 @@ exports.syncInstantlyLeadsToProspects = onSchedule(
 // the headers + Gmail's ~200-char snippet -- never the full body, never unmatched mail.
 // One-time setup (Gmail API on, Token Creator on the runtime SA, domain-wide delegation of
 // its client ID with the gmail.readonly scope in each Workspace admin console) is in CLAUDE.md.
-const GMAIL_MAILBOXES = ['guillermo@teligen.io', 'guillermo@011global.com'];
+// guillermo@011global.com is the same inbox (alias) as guillermo@teligen.io -- scanning both only re-reads it.
+const GMAIL_MAILBOXES = ['guillermo@teligen.io'];
 const GMAIL_INITIAL_LOOKBACK_DAYS = 90;
 const GMAIL_MAX_MESSAGES_PER_MAILBOX_PER_RUN = 400;
 const GMAIL_SCOPE = 'https://www.googleapis.com/auth/gmail.readonly';
