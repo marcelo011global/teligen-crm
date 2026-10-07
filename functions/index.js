@@ -10,6 +10,8 @@ const db = admin.firestore();
 const INSTANTLY_API_KEY = defineSecret('INSTANTLY_API_KEY');
 const INSTANTLY_BASE = 'https://api.instantly.ai/api/v2';
 const ALLOWED_DOMAINS = ['011global.com', '011telecom.com'];
+// Our own domains: a lead at one of these is a teammate/test address, never a prospect.
+const INTERNAL_DOMAINS = ['011global.com', '011telecom.com', 'teligen.io', 'teligenlabs.com'];
 // Instantly mailboxes whose sent/received mail gets imported into the CRM.
 const SYNCED_EACCOUNTS = ['michael@teligenlabs.com', 'guillermo@teligen.io', 'guillermo@011global.com', 'marcelo@011global.com', 'marcelo@teligen.io'];
 // Only Instantly campaigns whose name matches this are ever surfaced to the CRM —
@@ -303,7 +305,7 @@ exports.syncInstantlyLeadsToProspects = onSchedule(
         const items = data.items || [];
         for (const lead of items) {
           const email = (lead.email || '').toLowerCase();
-          if (!email || byEmail.has(email)) continue;
+          if (!email || byEmail.has(email) || INTERNAL_DOMAINS.includes(email.split('@')[1])) continue;
 
           const contactName = [lead.first_name, lead.last_name].filter(Boolean).join(' ') || email;
           const name = lead.company_name || contactName;

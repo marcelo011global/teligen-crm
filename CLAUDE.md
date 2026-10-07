@@ -203,6 +203,8 @@ entries. Deployed to the `teligen-crm` Firebase project, region `us-central1`.
   `instantlyStatus:'Synced'`, `instantlyLeadId` + `instantlyCampaign` kept for
   reference). So a lead created directly in Instantly — not uploaded from
   here — shows up as a Prospect in the CRM within 30 min, no manual step.
+  Leads at our own domains (`INTERNAL_DOMAINS`) are skipped — a teammate/test
+  address is never a prospect.
   No time-based cursor (the list-leads endpoint has none to filter by), so
   every run re-scans full campaigns; cost is one dedupe-map lookup per lead,
   capped at 20 pages (2000 leads) per campaign per run.
