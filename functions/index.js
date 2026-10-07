@@ -13,7 +13,7 @@ const ALLOWED_DOMAINS = ['011global.com', '011telecom.com'];
 // Our own domains: a lead at one of these is a teammate/test address, never a prospect.
 const INTERNAL_DOMAINS = ['011global.com', '011telecom.com', 'teligen.io', 'teligenlabs.com'];
 // Instantly mailboxes whose sent/received mail gets imported into the CRM.
-const SYNCED_EACCOUNTS = ['michael@teligenlabs.com', 'guillermo@teligen.io', 'guillermo@011global.com', 'marcelo@011global.com', 'marcelo@teligen.io'];
+const SYNCED_EACCOUNTS = ['michael@teligenlabs.com', 'guillermo@teligen.io', 'guillermo@011global.com', 'marcelo@011global.com', 'marcelo@teligen.io', 'wilmy@011global.com'];
 // Only Instantly campaigns whose name matches this are ever surfaced to the CRM —
 // the workspace has campaigns for other companies too.
 const CAMPAIGN_NAME_FILTER = /teligen/i;
@@ -347,7 +347,7 @@ exports.syncInstantlyLeadsToProspects = onSchedule(
 // its client ID with the gmail.readonly scope in each Workspace admin console) is in CLAUDE.md.
 // guillermo@011global.com is the same inbox (alias) as guillermo@teligen.io -- scanning both only re-reads it.
 // marcelo@teligen.io is the same inbox as marcelo@011global.com (identical message counts), so only one is scanned.
-const GMAIL_MAILBOXES = ['guillermo@teligen.io', 'marcelo@011global.com'];
+const GMAIL_MAILBOXES = ['guillermo@teligen.io', 'marcelo@011global.com', 'wilmy@011global.com'];
 const GMAIL_INITIAL_LOOKBACK_DAYS = 90;
 const GMAIL_MAX_MESSAGES_PER_MAILBOX_PER_RUN = 1500;
 const GMAIL_CONCURRENCY = 5;
