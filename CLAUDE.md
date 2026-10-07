@@ -155,7 +155,7 @@ lineup changes — no code deploy needed for either.
 ## Instantly integration (live)
 Uploads Prospects to Instantly for intro-email campaigns, and imports all email
 communication to/from `SYNCED_EACCOUNTS` (`functions/index.js` —
-`michael@teligenlabs.com`, `guillermo@teligen.io`, `guillermo@011global.com`) back into the matching
+`michael@teligenlabs.com`, `guillermo@teligen.io`, `guillermo@011global.com`, `marcelo@011global.com`, `marcelo@teligen.io`) back into the matching
 Prospect's (or Lead's, post-conversion) relationship log as `kind:'Email'`
 entries. Deployed to the `teligen-crm` Firebase project, region `us-central1`.
 - **Architecture**: Firebase Cloud Functions (`functions/index.js`), not

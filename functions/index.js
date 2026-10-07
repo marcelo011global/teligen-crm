@@ -11,7 +11,7 @@ const INSTANTLY_API_KEY = defineSecret('INSTANTLY_API_KEY');
 const INSTANTLY_BASE = 'https://api.instantly.ai/api/v2';
 const ALLOWED_DOMAINS = ['011global.com', '011telecom.com'];
 // Instantly mailboxes whose sent/received mail gets imported into the CRM.
-const SYNCED_EACCOUNTS = ['michael@teligenlabs.com', 'guillermo@teligen.io', 'guillermo@011global.com'];
+const SYNCED_EACCOUNTS = ['michael@teligenlabs.com', 'guillermo@teligen.io', 'guillermo@011global.com', 'marcelo@011global.com', 'marcelo@teligen.io'];
 // Only Instantly campaigns whose name matches this are ever surfaced to the CRM —
 // the workspace has campaigns for other companies too.
 const CAMPAIGN_NAME_FILTER = /teligen/i;
@@ -344,7 +344,7 @@ exports.syncInstantlyLeadsToProspects = onSchedule(
 // One-time setup (Gmail API on, Token Creator on the runtime SA, domain-wide delegation of
 // its client ID with the gmail.readonly scope in each Workspace admin console) is in CLAUDE.md.
 // guillermo@011global.com is the same inbox (alias) as guillermo@teligen.io -- scanning both only re-reads it.
-const GMAIL_MAILBOXES = ['guillermo@teligen.io'];
+const GMAIL_MAILBOXES = ['guillermo@teligen.io', 'marcelo@011global.com', 'marcelo@teligen.io'];
 const GMAIL_INITIAL_LOOKBACK_DAYS = 90;
 const GMAIL_MAX_MESSAGES_PER_MAILBOX_PER_RUN = 400;
 const GMAIL_SCOPE = 'https://www.googleapis.com/auth/gmail.readonly';
