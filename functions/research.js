@@ -131,4 +131,10 @@ function formatResearchNote(r) {
   return parts.join('\n\n');
 }
 
-module.exports = {normalizeCountries, cleanWebsite, isResearchable, extractJson, parseResearch, buildSystemPrompt, buildUserPrompt, formatResearchNote, domainOf};
+// Errors about the account, not the company (bad key, no permission, out of credit): retrying other
+// prospects can't help, and each try must not count against the prospect.
+function isFatalApiError(e) {
+  return !!e && (e.status === 401 || e.status === 403 || (e.status === 400 && /credit balance/i.test(String(e.message || ''))));
+}
+
+module.exports = {isFatalApiError, normalizeCountries, cleanWebsite, isResearchable, extractJson, parseResearch, buildSystemPrompt, buildUserPrompt, formatResearchNote, domainOf};

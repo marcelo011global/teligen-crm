@@ -647,13 +647,22 @@ exports.researchProspects = onSchedule(
     const Anthropic = require('@anthropic-ai/sdk');
     const client = new Anthropic({apiKey: ANTHROPIC_API_KEY.value()});
 
+    let stopped = false;
     await runPool(queue, RESEARCH_CONCURRENCY, async (p) => {
+      if (stopped) return;
       const ref = db.collection('prospects').doc(p.id);
       // Count the attempt first so a crash or timeout can't make one prospect retry (and bill) forever
       await ref.update({researchAttempts: (p.researchAttempts || 0) + 1});
       try {
         await applyResearch(p, await researchOne(client, p, apis));
       } catch (e) {
+        if (research.isFatalApiError(e)) {
+          // Bad key / no permission / out of credit: not this company's fault. Don't burn its attempt; stop the run.
+          stopped = true;
+          console.error(`researchProspects: stopping — Anthropic rejected the request (${e.status}): ${String(e.message || e).slice(0, 200)}`);
+          await ref.update({researchAttempts: p.researchAttempts || 0, researchStatus: null, researchError: null});
+          return;
+        }
         console.error(`researchProspects: "${p.name}" failed:`, e.message || e);
         await ref.update({researchStatus: 'failed', researchError: String(e.message || e).slice(0, 300)});
       }
