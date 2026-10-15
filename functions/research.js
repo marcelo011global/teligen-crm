@@ -60,8 +60,14 @@ function isResearchable(p) {
   return !(p.contacts || []).some(c => String(c.name || '').trim().toLowerCase() === name);
 }
 
+// The basic web search tool wraps cited claims in <cite index="..."> tags inside the text, and the
+// quotes in those attributes also break JSON strings. Strip them (tags only, never the text between).
+function stripCites(s) {
+  return String(s || '').replace(/[<(]\/?cite\b[^>]*>/gi, '');
+}
+
 function extractJson(text) {
-  const t = String(text || '');
+  const t = stripCites(text);
   const fenced = t.match(/```(?:json)?\s*([\s\S]*?)```/i);
   const candidates = [fenced && fenced[1], t.slice(t.indexOf('{'), t.lastIndexOf('}') + 1)];
   for (const c of candidates) {
@@ -71,7 +77,7 @@ function extractJson(text) {
   return null;
 }
 
-const str = (v, max) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
+const str = (v, max) => (typeof v === 'string' ? stripCites(v).replace(/ {2,}/g, ' ').trim().slice(0, max) : '');
 
 // Validates the model's JSON; returns null if it isn't usable.
 function parseResearch(text) {
@@ -137,4 +143,4 @@ function isFatalApiError(e) {
   return !!e && (e.status === 401 || e.status === 403 || (e.status === 400 && /credit balance/i.test(String(e.message || ''))));
 }
 
-module.exports = {isFatalApiError, normalizeCountries, cleanWebsite, isResearchable, extractJson, parseResearch, buildSystemPrompt, buildUserPrompt, formatResearchNote, domainOf};
+module.exports = {stripCites, isFatalApiError, normalizeCountries, cleanWebsite, isResearchable, extractJson, parseResearch, buildSystemPrompt, buildUserPrompt, formatResearchNote, domainOf};

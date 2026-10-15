@@ -253,7 +253,9 @@ entries. Deployed to the `teligen-crm` Firebase project, region `us-central1`.
   too low" — `isFatalApiError()`) stop the run without counting an attempt against the
   prospect; per-company errors count (max 2). The secret must be a Console API key
   (`sk-ant-api03-…`, ~108 chars) — a token of another type (e.g. `sk-ant-usr-…`) is rejected
-  with 401.
+  with 401. The basic web search tool injects `<cite index="…">` tags (with quotes that break
+  JSON strings) into the model's text; `stripCites()` in `functions/research.js` removes them
+  before parsing and from every stored field.
 - **`syncGmailMessages`** (scheduled, every 30 min) — logs the team's own 1:1
   email (not just Instantly campaign mail) onto the matching record. Reads each
   mailbox in `GMAIL_MAILBOXES` (`functions/index.js`) via the Gmail API with
