@@ -471,7 +471,10 @@ function allOpenFollowUps(){
   out.sort((a,b)=>(a.followDate||'').localeCompare(b.followDate||''));
   return out;
 }
-function hasAnyLog(type,id){ return entriesFor(type,id).length>0; }
+// Entries a Cloud Function writes on its own (e.g. the automated company-research note,
+// automated:'research') are not human activity, so they never make an account "not silent" or set "Last contact".
+function humanEntriesFor(type,id){ return entriesFor(type,id).filter(e=>!e.automated); }
+function hasAnyLog(type,id){ return humanEntriesFor(type,id).length>0; }
 
 // ── Nav / view meta ──────────────────────────────────────────────────────
 const NAV = [
@@ -1134,7 +1137,7 @@ function materialsBodyHTML(){
 function recordOf(type,id){ return DATA[type].find(r=>r.id===id); }
 function recordStats(type, rec){
   if(type==='prospects'){
-    const lastLog=entriesFor(type,rec.id).sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||''))[0];
+    const lastLog=humanEntriesFor(type,rec.id).sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||''))[0];
     return [
       {k:'Countries', v:(rec.countries||[]).length}, {k:'Contacts', v:(rec.contacts||[]).length},
       {k:'Instantly', v:rec.instantlyStatus||'Not synced'}, {k:'Last contact', v: lastLog?relTime(lastLog.createdAt):'—'}
@@ -1150,7 +1153,7 @@ function recordStats(type, rec){
   ];
   if(type==='providers'){
     const apis=computeApis(rec.coverage);
-    const lastLog=entriesFor(type,rec.id).sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||''))[0];
+    const lastLog=humanEntriesFor(type,rec.id).sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||''))[0];
     return [
       {k:'APIs live', v:apis.filter(f=>f==='Live').length+' / '+APIS.length},
       {k:'Footprint', v:(rec.coverage||[]).length+' markets'},

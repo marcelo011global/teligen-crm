@@ -552,3 +552,108 @@ exports.syncGmailMessages = onSchedule(
     }
   }
 );
+
+// ── Company research ────────────────────────────────────────────────────────
+// Fills in what the Instantly import can't know: for each prospect that hasn't been
+// researched, Claude (with web search) identifies the company and we (1) add the countries it
+// operates in, (2) fill the website if it's empty, and (3) log a note saying what the company
+// does and how Teligen could work with it. Runs as its own queue, a few prospects per run, so a
+// big import (or the first backfill) is spread out instead of one long, expensive burst.
+// Needs the ANTHROPIC_API_KEY secret (`firebase functions:secrets:set ANTHROPIC_API_KEY`).
+// The note is flagged `automated:'research'` so the CRM does not count it as human activity.
+const ANTHROPIC_API_KEY = defineSecret('ANTHROPIC_API_KEY');
+const research = require('./research');
+const RESEARCH_MODEL = 'claude-opus-5-5';
+const RESEARCH_MAX_PER_RUN = 6;
+const RESEARCH_CONCURRENCY = 3;
+const RESEARCH_MAX_ATTEMPTS = 2;
+
+async function runPool(items, size, fn) {
+  let next = 0;
+  await Promise.all(Array.from({length: Math.min(size, items.length)}, async () => {
+    while (next < items.length) await fn(items[next++]);
+  }));
+}
+
+async function researchOne(client, prospect, apis) {
+  const messages = [{role: 'user', content: research.buildUserPrompt(prospect)}];
+  const system = research.buildSystemPrompt(apis);
+  let response;
+  const used = {input: 0, output: 0, searches: 0};
+  for (let turn = 0; turn < 5; turn++) {
+    response = await client.messages.stream({
+      model: RESEARCH_MODEL,
+      max_tokens: 16000,
+      system,
+      output_config: {effort: 'medium'},
+      tools: [{type: 'web_search_20260209', name: 'web_search', max_uses: 6}],
+      messages,
+    }).finalMessage();
+    used.input += response.usage.input_tokens || 0;
+    used.output += response.usage.output_tokens || 0;
+    used.searches += (response.usage.server_tool_use && response.usage.server_tool_use.web_search_requests) || 0;
+    if (response.stop_reason !== 'pause_turn') break;
+    messages.push({role: 'assistant', content: response.content});
+  }
+  if (response.stop_reason === 'refusal') throw new Error('model declined the request');
+  if (response.stop_reason === 'pause_turn') throw new Error('research did not finish');
+  const text = response.content.filter(b => b.type === 'text').map(b => b.text).join('\n');
+  const parsed = research.parseResearch(text);
+  if (!parsed) throw new Error('could not parse the research output');
+  console.log(`researchProspects: "${prospect.name}" -> ${parsed.found ? parsed.confidence : 'not found'} (in ${used.input} / out ${used.output} tokens, ${used.searches} searches)`);
+  return parsed;
+}
+
+async function applyResearch(prospect, r) {
+  const now = new Date().toISOString();
+  const ref = db.collection('prospects').doc(prospect.id);
+  const update = {researchedAt: now, researchStatus: r.found ? 'done' : 'not_found', researchConfidence: r.found ? r.confidence : null, researchError: null};
+  let text;
+  if (r.found) {
+    if (r.confidence !== 'low') {
+      const merged = [...new Set([...(prospect.countries || []), ...r.countries])];
+      if (merged.length !== (prospect.countries || []).length) update.countries = merged;
+      if (!(prospect.website || '').trim() && r.website) update.website = r.website;
+    }
+    text = research.formatResearchNote(r);
+  } else {
+    text = 'Automated company research — could not identify this company with enough confidence from public sources, so nothing was filled in.';
+  }
+  await ref.update(update);
+  await db.collection('logEntries').add({
+    recordType: 'prospects', recordId: prospect.id, parentId: null, kind: 'Note',
+    author: 'Company research (AI)', initials: 'AI', text,
+    follow: false, followDate: null, followDone: false, closedOn: null,
+    automated: 'research', createdAt: now,
+  });
+}
+
+exports.researchProspects = onSchedule(
+  {schedule: 'every 15 minutes', secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 540, memory: '512MiB'},
+  async () => {
+    const snap = await db.collection('prospects').get();
+    const queue = snap.docs.map(d => ({id: d.id, ...d.data()}))
+      .filter(p => !p.researchedAt && (p.researchAttempts || 0) < RESEARCH_MAX_ATTEMPTS && research.isResearchable(p))
+      .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''))
+      .slice(0, RESEARCH_MAX_PER_RUN);
+    if (!queue.length) return;
+
+    const cfg = await db.collection('settings').doc('config').get();
+    const apis = cfg.exists && Array.isArray(cfg.data().apis) ? cfg.data().apis : null;
+    const Anthropic = require('@anthropic-ai/sdk');
+    const client = new Anthropic({apiKey: ANTHROPIC_API_KEY.value()});
+
+    await runPool(queue, RESEARCH_CONCURRENCY, async (p) => {
+      const ref = db.collection('prospects').doc(p.id);
+      // Count the attempt first so a crash or timeout can't make one prospect retry (and bill) forever
+      await ref.update({researchAttempts: (p.researchAttempts || 0) + 1});
+      try {
+        await applyResearch(p, await researchOne(client, p, apis));
+      } catch (e) {
+        console.error(`researchProspects: "${p.name}" failed:`, e.message || e);
+        await ref.update({researchStatus: 'failed', researchError: String(e.message || e).slice(0, 300)});
+      }
+    });
+    console.log(`researchProspects: processed ${queue.length} prospect(s)`);
+  }
+);

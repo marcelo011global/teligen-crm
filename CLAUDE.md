@@ -230,6 +230,25 @@ entries. Deployed to the `teligen-crm` Firebase project, region `us-central1`.
   No time-based cursor (the list-leads endpoint has none to filter by), so
   every run re-scans full campaigns; cost is one dedupe-map lookup per lead,
   capped at 20 pages (2000 leads) per campaign per run.
+- **`researchProspects`** (scheduled, every 15 min) — a separate queue that researches
+  prospects the import can't describe: Claude (`claude-opus-5-5`, `RESEARCH_MODEL`) with the
+  server-side web search tool identifies the company, then we (1) union its countries of
+  operation into `countries` (only names from `functions/countries.js`, a mirror of
+  `COUNTRIES` in `index.html` — keep them in sync), (2) fill `website` **only if empty**,
+  (3) log a Note ("What they do / How Teligen could work with them / Countries / Sources")
+  authored "Company research (AI)" with `automated:'research'`. Low-confidence or
+  not-found results fill nothing (the note says so). Helpers are in `functions/research.js`
+  (pure, unit-testable). Takes ≤6 prospects per run (`RESEARCH_MAX_PER_RUN`), newest first,
+  so a backlog is spread out and cost is capped; each prospect gets ≤2 attempts
+  (`researchAttempts`), state lives on the prospect (`researchedAt`, `researchStatus`,
+  `researchConfidence`, `researchError`). Cost per company is roughly the tokens + ~2-6 web
+  searches — each run logs `in/out tokens, N searches` per company; check those after the
+  first batch. Needs the **`ANTHROPIC_API_KEY`** secret (`firebase functions:secrets:set
+  ANTHROPIC_API_KEY`) — until it exists, deploy only named functions
+  (`--only functions:<name>`), since a full deploy fails on the missing secret. The CRM
+  ignores `automated` entries when deciding if an account is "silent" and for "Last
+  contact" (`humanEntriesFor()` in `index.html`). To re-research a prospect, delete its
+  `researchedAt` field in Firestore.
 - **`syncGmailMessages`** (scheduled, every 30 min) — logs the team's own 1:1
   email (not just Instantly campaign mail) onto the matching record. Reads each
   mailbox in `GMAIL_MAILBOXES` (`functions/index.js`) via the Gmail API with
