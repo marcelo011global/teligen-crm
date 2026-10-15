@@ -231,7 +231,8 @@ entries. Deployed to the `teligen-crm` Firebase project, region `us-central1`.
   every run re-scans full campaigns; cost is one dedupe-map lookup per lead,
   capped at 20 pages (2000 leads) per campaign per run.
 - **`researchProspects`** (scheduled, every 15 min) — a separate queue that researches
-  prospects the import can't describe: Claude (`claude-opus-5-5`, `RESEARCH_MODEL`) with the
+  prospects the import can't describe: Claude (`claude-haiku-5-5`, `RESEARCH_MODEL` — small on purpose, ~$0.05/company
+  estimated; Sonnet 5.5 ≈ $0.17, needs `web_search_20260209`) with the
   server-side web search tool identifies the company, then we (1) union its countries of
   operation into `countries` (only names from `functions/countries.js`, a mirror of
   `COUNTRIES` in `index.html` — keep them in sync), (2) fill `website` **only if empty**,

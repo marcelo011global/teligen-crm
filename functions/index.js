@@ -563,7 +563,11 @@ exports.syncGmailMessages = onSchedule(
 // The note is flagged `automated:'research'` so the CRM does not count it as human activity.
 const ANTHROPIC_API_KEY = defineSecret('ANTHROPIC_API_KEY');
 const research = require('./research');
-const RESEARCH_MODEL = 'claude-opus-5-5';
+// Small model on purpose: this is summarizing public info, not hard reasoning. Haiku and older models
+// use the basic web search tool (the dynamic-filtering web_search_20260209 is Sonnet 5+/Opus only).
+// To trade cost for quality, switch to 'claude-sonnet-5-5' and web_search_20260209.
+const RESEARCH_MODEL = 'claude-haiku-5-5';
+const RESEARCH_SEARCH_TOOL = 'web_search_20250305';
 const RESEARCH_MAX_PER_RUN = 6;
 const RESEARCH_CONCURRENCY = 3;
 const RESEARCH_MAX_ATTEMPTS = 2;
@@ -586,7 +590,7 @@ async function researchOne(client, prospect, apis) {
       max_tokens: 16000,
       system,
       output_config: {effort: 'medium'},
-      tools: [{type: 'web_search_20260209', name: 'web_search', max_uses: 6}],
+      tools: [{type: RESEARCH_SEARCH_TOOL, name: 'web_search', max_uses: 6}],
       messages,
     }).finalMessage();
     used.input += response.usage.input_tokens || 0;
