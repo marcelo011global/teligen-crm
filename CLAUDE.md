@@ -218,6 +218,13 @@ entries. Deployed to the `teligen-crm` Firebase project, region `us-central1`.
   `instantlyStatus:'Synced'`, `instantlyLeadId` + `instantlyCampaign` kept for
   reference). So a lead created directly in Instantly — not uploaded from
   here — shows up as a Prospect in the CRM within 30 min, no manual step.
+  **One prospect per company, not per contact**: leads are grouped by company
+  (`companyKeys()` — website domain, else normalized company name, else the email
+  domain unless it's free mail like gmail); a second contact at a company that already
+  has a prospect is appended to that prospect's `contacts[]` instead of creating a new
+  one. Free-mail leads with no company/website can't be grouped and stay one-per-person.
+  Only prospects are matched this way (a company that is already a Lead/Customer is not
+  detected by company, only by exact contact email).
   Leads at our own domains (`INTERNAL_DOMAINS`) are skipped — a teammate/test
   address is never a prospect.
   No time-based cursor (the list-leads endpoint has none to filter by), so

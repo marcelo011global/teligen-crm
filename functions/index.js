@@ -270,6 +270,30 @@ exports.syncInstantlyEmails = onSchedule(
   }
 );
 
+// Company identity for grouping leads into ONE prospect: the website domain when there is
+// one, else the company name, else (for non-free-mail addresses) the email domain. Free-mail
+// leads with no company stay one-prospect-per-person since there is nothing to group on.
+const FREE_MAIL = new Set(['gmail.com', 'googlemail.com', 'hotmail.com', 'outlook.com', 'live.com', 'yahoo.com', 'yahoo.com.br', 'icloud.com', 'me.com', 'msn.com', 'aol.com', 'proton.me', 'protonmail.com', 'uol.com.br', 'bol.com.br', 'terra.com.br', 'terra.com', 'hotmail.es', 'yahoo.es']);
+function domainOf(urlOrHost) {
+  const h = String(urlOrHost || '').trim().toLowerCase().replace(/^https?:\/\//, '').split(/[\/?#]/)[0].replace(/^www\./, '');
+  return /^[a-z0-9.-]+\.[a-z]{2,}$/.test(h) ? h : '';
+}
+function normCompany(name) {
+  return String(name || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '');
+}
+function companyKeys({company, website, email}) {
+  const keys = [];
+  const d = domainOf(website);
+  if (d) keys.push('d:' + d);
+  const n = normCompany(company);
+  if (n.length >= 3) keys.push('n:' + n);
+  if (!keys.length) {
+    const ed = domainOf((email || '').split('@')[1]);
+    if (ed && !FREE_MAIL.has(ed)) keys.push('d:' + ed);
+  }
+  return keys;
+}
+
 // Polls every Teligen campaign in Instantly and creates a Prospect here for any
 // lead whose email isn't already attached to a record in the CRM (Prospect, Lead,
 // Customer, Provider or Partner). Keeps the CRM as a mirror of who's being
@@ -285,7 +309,18 @@ exports.syncInstantlyLeadsToProspects = onSchedule(
     }
 
     const byEmail = await buildEmailIndex();
-    let created = 0;
+    // company key -> existing prospect, so a second contact at the same company is added to it
+    // instead of creating another prospect. Built from the live collection every run.
+    const byCompany = new Map();
+    const prospectSnap = await db.collection('prospects').get();
+    for (const d of prospectSnap.docs) {
+      const v = d.data();
+      const entry = {id: d.id, contacts: v.contacts || [], dirty: false};
+      for (const k of companyKeys({company: v.name, website: v.website, email: ((v.contacts || [])[0] || {}).email})) {
+        if (!byCompany.has(k)) byCompany.set(k, entry);
+      }
+    }
+    let created = 0, attached = 0;
     const MAX_PAGES = 20;
 
     for (const campaign of campaigns) {
@@ -308,16 +343,28 @@ exports.syncInstantlyLeadsToProspects = onSchedule(
           if (!email || byEmail.has(email) || INTERNAL_DOMAINS.includes(email.split('@')[1])) continue;
 
           const contactName = [lead.first_name, lead.last_name].filter(Boolean).join(' ') || email;
-          const name = lead.company_name || contactName;
+          const contact = {name: contactName, role: lead.job_title || '', kind: 'Primary', email: lead.email, phone: lead.phone || ''};
+          const keys = companyKeys({company: lead.company_name, website: lead.website, email});
+          const existing = keys.map(k => byCompany.get(k)).find(Boolean);
+
+          if (existing) {
+            existing.contacts.push({...contact, kind: existing.contacts.length ? 'Commercial' : 'Primary'});
+            existing.dirty = true;
+            for (const k of keys) if (!byCompany.has(k)) byCompany.set(k, existing);
+            byEmail.set(email, {type: 'prospects', id: existing.id});
+            attached++;
+            continue;
+          }
+
           const now = new Date().toISOString();
           const ref = await db.collection('prospects').add({
-            name,
+            name: lead.company_name || contactName,
             side: 'Customer',
             owner: 'Unassigned',
             website: lead.website || '',
             countries: [],
             source: 'Cold outreach',
-            contacts: [{name: contactName, role: '', kind: 'Primary', email: lead.email, phone: ''}],
+            contacts: [contact],
             documents: [],
             instantlyStatus: 'Synced',
             instantlySyncedAt: now,
@@ -325,6 +372,8 @@ exports.syncInstantlyLeadsToProspects = onSchedule(
             instantlyCampaign: campaign.name,
             createdAt: now,
           });
+          const entry = {id: ref.id, contacts: [contact], dirty: false};
+          for (const k of keys) if (!byCompany.has(k)) byCompany.set(k, entry);
           byEmail.set(email, {type: 'prospects', id: ref.id});
           created++;
         }
@@ -333,7 +382,15 @@ exports.syncInstantlyLeadsToProspects = onSchedule(
       } while (startingAfter && pages < MAX_PAGES);
     }
 
-    console.log(`syncInstantlyLeadsToProspects: created ${created} new prospect(s) from ${campaigns.length} Teligen campaign(s)`);
+    // One write per prospect that gained contacts (not one per lead)
+    const written = new Set();
+    for (const entry of byCompany.values()) {
+      if (!entry.dirty || written.has(entry.id)) continue;
+      written.add(entry.id);
+      await db.collection('prospects').doc(entry.id).update({contacts: entry.contacts});
+    }
+
+    console.log(`syncInstantlyLeadsToProspects: created ${created} new prospect(s), added ${attached} contact(s) to existing ones, from ${campaigns.length} Teligen campaign(s)`);
   }
 );
 
